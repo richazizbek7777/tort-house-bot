@@ -1,0 +1,1 @@
+worker: python bakery_bot_ideal.py
