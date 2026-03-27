@@ -14,7 +14,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
     CallbackQuery,
-    CopyTextButton,
+    Contact,
     InlineKeyboardMarkup,
     KeyboardButton,
     Message,
@@ -814,18 +814,11 @@ def admin_keyboard() -> ReplyKeyboardMarkup:
         ],
         resize_keyboard=True,
     )
+@dp.callback_query(F.data == "show_card")
+async def show_card_callback(callback: CallbackQuery) -> None:
+    await callback.message.answer(f"💳 Karta raqami:\n<code>{CARD_NUMBER}</code>")
+    await callback.answer()
 
-def copy_card_keyboard() -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    kb.button(text="📋 Karta raqamni nusxalash", copy_text=CopyTextButton(text=CARD_NUMBER))
-    if PAYME_URL:
-        kb.button(text="💜 Payme", url=PAYME_URL)
-    if CLICK_URL:
-        kb.button(text="💙 Click", url=CLICK_URL)
-    if UZUM_URL:
-        kb.button(text="🟣 Uzum", url=UZUM_URL)
-    kb.adjust(1, 3)
-    return kb.as_markup()
 
 def admin_order_actions_keyboard(order_id: int) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
