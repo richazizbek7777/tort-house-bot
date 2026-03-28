@@ -8,6 +8,7 @@ from contextlib import closing
 from datetime import datetime, timedelta
 from typing import Any
 
+
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -24,6 +25,7 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+print("BOT FILE STARTED")
 
 # =========================================================
 # ⚙️ CONFIG
@@ -2027,6 +2029,8 @@ async def admin_order_action_handler(callback: CallbackQuery) -> None:
 # =========================================================
 async def main() -> None:
     global bot
+    print("MAIN STARTED")
+    print("BOT_TOKEN BOR:", bool(BOT_TOKEN))
 
     if not BOT_TOKEN:
         raise ValueError("BOT_TOKEN topilmadi.")
@@ -2036,4 +2040,5 @@ async def main() -> None:
         token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
+    print("POLLING START")
     await dp.start_polling(bot)
