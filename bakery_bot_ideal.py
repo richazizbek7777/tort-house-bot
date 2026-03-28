@@ -43,7 +43,7 @@ def env_int_set(name: str, default: str = "") -> set[int]:
     return values
 
 
-BOT_TOKEN = os.getenv("8738414496:AAGq2O2jvel8wVmX9hdYigHpJtc1pLT5FvE", "8738414496:AAGq2O2jvel8wVmX9hdYigHpJtc1pLT5FvE").strip()
+BOT_TOKEN = os.getenv("8738414496:AAGq2O2jvel8wVmX9hdYigHpJtc1pLT5FvE", "").strip()
 ADMIN_IDS = env_int_set("ADMIN_IDS", "1031944247,7410870199")
 SUPER_ADMIN_IDS = env_int_set("SUPER_ADMIN_IDS", "1031944247")
 
