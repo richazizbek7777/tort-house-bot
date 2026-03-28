@@ -99,7 +99,7 @@ PRODUCT_CATALOG = {
         "needs_color": True,
         "needs_filling": True,
         "needs_text": True,
-        "quantity_hint": "\nMasalan: 10 kishilik, 15 kishilik",
+        "quantity_hint": "\nMasalan: 1 dona, 10 kishilik",
     },
     "Pirojniy": {
         "ask_variant": True,
@@ -139,7 +139,7 @@ PRODUCT_CATALOG = {
         "needs_color": False,
         "needs_filling": False,
         "needs_text": False,
-        "quantity_hint": "\nMasalan: 1 dona, 6 dona, 12 dona",
+        "quantity_hint": "\nMasalan: 1 dona",
     },
     "Trayfel": {
         "ask_variant": True,
