@@ -242,9 +242,9 @@ def build_product_number_map() -> list[dict[str, Any]]:
 PRODUCT_NUMBER_MAP = build_product_number_map()
 PRODUCT_NUMBER_LOOKUP = {row["number"]: row for row in PRODUCT_NUMBER_MAP}
 PRODUCT_KEY_LOOKUP = {(row["category"], row["title"]): row["number"] for row in PRODUCT_NUMBER_MAP}
-ODDIY_TORT_SET = {item.strip() for item in PRODUCT_CATALOG["Tort"]["groups"]["Oddiy tortlar"]}
-PREMIUM_TORT_SET = {item.strip() for item in PRODUCT_CATALOG["Tort"]["groups"]["Premium tortlar"]}
-
+tort_groups = PRODUCT_CATALOG.get("Tort", {}).get("groups", {})
+ODDIY_TORT_SET = {item.strip() for item in tort_groups.get("Oddiy tortlar", [])}
+PREMIUM_TORT_SET = {item.strip() for item in tort_groups.get("Premium tortlar", [])} 
 
 def is_tort_product(category: str) -> bool:
     return category == "Tort"
