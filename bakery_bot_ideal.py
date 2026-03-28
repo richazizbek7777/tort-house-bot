@@ -1,7 +1,10 @@
+
 import asyncio
+import json
 import logging
 import os
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -14,6 +17,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
     CallbackQuery,
+    InlineKeyboardButton,
     InlineKeyboardMarkup,
     KeyboardButton,
     Message,
@@ -24,36 +28,36 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 # =========================================================
 # ⚙️ CONFIG
 # =========================================================
-BOT_TOKEN = os.getenv("8738414496:AAGq2O2jvel8wVmX9hdYigHpJtc1pLT5FvE", "8738414496:AAGq2O2jvel8wVmX9hdYigHpJtc1pLT5FvE").strip()
 
-ADMIN_IDS = {
-    int(x.strip())
-    for x in os.getenv("ADMIN_IDS", "1031944247,7410870199").split(",")
-    if x.strip().isdigit()
-}
+def env_str(name: str, default: str = "") -> str:
+    return (os.getenv(name, default) or default).strip()
 
-SUPER_ADMIN_IDS = {
-    int(x.strip())
-    for x in os.getenv("SUPER_ADMIN_IDS", "1031944247").split(",")
-    if x.strip().isdigit()
-}
 
-CARD_NUMBER = os.getenv("CARD_NUMBER", "9860 1201 0248 9743")
-CARD_OWNER = os.getenv("CARD_OWNER", "Asadbek T")
-CARD_TEXT = f"💳 Zakolat uchun karta:👤 {CARD_OWNER}\n<code>{CARD_NUMBER}</code>"
-PHONE_TEXT = os.getenv("PHONE_TEXT", "\n+998 99 845 56 51\n+998 94 368 00 06")
-TELEGRAM_TEXT = os.getenv("TELEGRAM_TEXT", "@tort_house_chartak")
-WORK_TIME_TEXT = os.getenv("WORK_TIME_TEXT", "08:00 - 00:00")
-DB_NAME = os.getenv("DB_NAME", "bakery_torthouse_style.db")
+def env_int_set(name: str, default: str = "") -> set[int]:
+    raw = env_str(name, default)
+    values: set[int] = set()
+    for part in raw.split(","):
+        part = part.strip()
+        if part.isdigit():
+            values.add(int(part))
+    return values
 
-PAYME_URL = os.getenv("PAYME_URL", "")
-CLICK_URL = os.getenv("CLICK_URL", "")
-UZUM_URL = os.getenv("UZUM_URL", "")
 
-BRAND_TEXT = "🍰 Tort House"
-MIN_DEPOSIT = 20000
-MID_DEPOSIT = 30000
-BIG_DEPOSIT = 50000
+BOT_TOKEN = env_str("8738414496:AAGq2O2jvel8wVmX9hdYigHpJtc1pLT5FvE")
+ADMIN_IDS = env_int_set("ADMIN_IDS", "1031944247,7410870199")
+SUPER_ADMIN_IDS = env_int_set("SUPER_ADMIN_IDS", "1031944247")
+
+CARD_NUMBER = env_str("CARD_NUMBER", "9860 1201 0248 9743")
+CARD_OWNER = env_str("CARD_OWNER", "Asadbek T")
+CARD_TEXT = f"💳 Zakolat uchun karta:\n👤 {CARD_OWNER}\n<code>{CARD_NUMBER}</code>"
+PHONE_TEXT = env_str("PHONE_TEXT", "+998 99 845 56 51\n+998 94 368 00 06")
+TELEGRAM_TEXT = env_str("TELEGRAM_TEXT", "@tort_house_chartak")
+WORK_TIME_TEXT = env_str("WORK_TIME_TEXT", "08:00 - 00:00")
+DB_NAME = env_str("DB_NAME", "bakery_torthouse_style.db")
+PAYME_URL = env_str("PAYME_URL")
+CLICK_URL = env_str("CLICK_URL")
+UZUM_URL = env_str("UZUM_URL")
+BRAND_TEXT = env_str("BRAND_TEXT", "🍰 Tort House")
 
 STATUS_WAITING_PRICE = "waiting_price"
 STATUS_PRICED = "priced"
@@ -67,147 +71,140 @@ STATUS_DELIVERED = "delivered"
 # =========================================================
 # 📚 PRODUCT CATALOG
 # =========================================================
-PRODUCT_CATALOG = {
+
+PRODUCT_CATALOG: dict[str, dict[str, Any]] = {
     "Tort": {
-        "ask_variant": True,
         "groups": {
-            "\nOddiy tortlar\n": [
-                "Bento\n",
-                "Bento konteyner\n",
-                "Yurakchali\n",
-                "Mini-oq/shokoladli\n",
-                "Mini 2 qavatli oq/shokoladli\n",
-                "O'rta oq/shokoladli\n",
-                "Kvadrat 2 qavatli oq/shokoladli\n",
-                "Kvadrat 3 qavatli oq/shokoladli\n",
-                "Katta tortburchak 2 qavatli oq/shokoladli\n",
-                "Katta tortburchak 3 qavatli oq/shokoladli\n",
+            "Oddiy tortlar": [
+                "Bento",
+                "Bento konteyner",
+                "Yurakchali",
+                "Mini-oq/shokoladli",
+                "Mini 2 qavatli oq/shokoladli",
+                "O'rta oq/shokoladli",
+                "Kvadrat 2 qavatli oq/shokoladli",
+                "Kvadrat 3 qavatli oq/shokoladli",
+                "Katta tortburchak 2 qavatli oq/shokoladli",
+                "Katta tortburchak 3 qavatli oq/shokoladli",
             ],
-            "\nPremium tortlar\n": [
-                "Snikersli\n",
-                "Bagatiy\n",
-                "Gumbaz\n",
-                "Mevali\n",
-                "Rafaello\n",
-                "Yagodniy\n",
-                "Izabello malinali\n",
-                "Izabello \n",
-                "Bakalashka qulupnay\n",
-                "Bakalashka snikers\n\n",
+            "Premium tortlar": [
+                "Snikersli",
+                "Bagatiy",
+                "Gumbaz",
+                "Mevali",
+                "Rafaello",
+                "Yagodniy",
+                "Izabello malinali",
+                "Izabello",
+                "Bakalashka qulupnay",
+                "Bakalashka snikers",
             ],
         },
         "needs_design": True,
         "needs_color": True,
         "needs_filling": True,
         "needs_text": True,
-        "quantity_hint": "\nMasalan: 1 dona, 10 kishilik",
+        "quantity_hint": "Masalan: 1 dona, 10 kishilik",
     },
     "Pirojniy": {
-        "ask_variant": True,
         "groups": {
-            "\nOddiy pirojniylar\n": [
-                "Fistacho\n",
-                "Maxroviy\n",
-                "Jiyan\n",
-                "Ptichi moloko\n",
-                "Monaco\n",
-                "Mars\n",
+            "Oddiy pirojniylar": [
+                "Fistacho",
+                "Maxroviy",
+                "Jiyan",
+                "Ptichi moloko",
+                "Monaco",
+                "Mars",
             ],
-            "\nMevali pirojniylar\n": [
-                "Yagodniy pirojniy\n",
-                "Qulupnayli pirojniy\n",
-                "Malinali pirojniy\n",
-                "Ice Cake qulupnayli\n",
-                "Ice Cake malinali\n",
-                "Ice Cake anorli\n",
-                "Ice Cake Gilosli\n",
+            "Mevali pirojniylar": [
+                "Yagodniy pirojniy",
+                "Qulupnayli pirojniy",
+                "Malinali pirojniy",
+                "Ice Cake qulupnayli",
+                "Ice Cake malinali",
+                "Ice Cake anorli",
+                "Ice Cake Gilosli",
             ],
-            "\nPremium pirojniylar\n": [
-                "Matilda pirojniy\n",
-                "Pistali pirojniy\n",
-                "Sansebastian Pistali\n",
-                "Medovik pirojniy\n",
-                "Snikers pirojniy\n",
+            "Premium pirojniylar": [
+                "Matilda pirojniy",
+                "Pistali pirojniy",
+                "Sansebastian Pistali",
+                "Medovik pirojniy",
+                "Snikers pirojniy",
             ],
-            "\nRulet va konteyner\n": [
-                "Mars konteyner\n",
-                "Makli oq rulet\n",
-                "Tvarogli rulet\n",
-                "Tvarogli momiq\n\n",
+            "Rulet va konteyner": [
+                "Mars konteyner",
+                "Makli oq rulet",
+                "Tvarogli rulet",
+                "Tvarogli momiq",
             ],
         },
         "needs_design": False,
         "needs_color": False,
         "needs_filling": False,
         "needs_text": False,
-        "quantity_hint": "\nMasalan: 1 dona",
+        "quantity_hint": "Masalan: 1 dona",
     },
     "Trayfel": {
-        "ask_variant": True,
         "groups": {
-            "\nTrayfel turlari\n": [
-                "Mitti trayfel\n",
-                "Kichik trayfel\n",
-                "Katta trayfel\n",
-                "Mevali trayfel\n\n",
+            "Trayfel turlari": [
+                "Mitti trayfel",
+                "Kichik trayfel",
+                "Katta trayfel",
+                "Mevali trayfel",
             ],
         },
         "needs_design": False,
         "needs_color": False,
         "needs_filling": False,
         "needs_text": False,
-        "quantity_hint": "\nMasalan: 1 dona, 2 dona, 5 dona",
+        "quantity_hint": "Masalan: 1 dona, 2 dona, 5 dona",
     },
     "Somsa": {
-        "ask_variant": True,
         "groups": {
-            "\nGo'shtli\n": ["Go'shtli\n", "Tovuqli\n"],
-            "\nSabzavotli\n": ["Oshqovoqli\n", "Ko'katli\n", "Kartoshkali\n\n"],
+            "Go'shtli": ["Go'shtli", "Tovuqli"],
+            "Sabzavotli": ["Oshqovoqli", "Ko'katli", "Kartoshkali"],
         },
         "needs_design": False,
         "needs_color": False,
         "needs_filling": False,
         "needs_text": False,
-        "quantity_hint": "\nMasalan: 5 dona, 10 dona, 20 dona",
+        "quantity_hint": "Masalan: 5 dona, 10 dona, 20 dona",
     },
     "Kruassan": {
-        "ask_variant": True,
         "groups": {
-            "\nKruassan turlari\n": ["Marojnali\n", "Shokoladli\n", "Qulupnayli\n\n"],
+            "Kruassan turlari": ["Marojnali", "Shokoladli", "Qulupnayli"],
         },
         "needs_design": False,
         "needs_color": False,
         "needs_filling": False,
         "needs_text": False,
-        "quantity_hint": "\nMasalan: 1 dona, 3 dona, 6 dona",
+        "quantity_hint": "Masalan: 1 dona, 3 dona, 6 dona",
     },
     "Ichimliklar": {
-        "ask_variant": True,
         "groups": {
-            "\nSalqin ichimliklar\n": ["Cola\n", "Fanta\n", "Pepsi\n", "Sok\n", "Gazsiz suv\n"],
-            "\nKofelar\n": ["Cappucino\n", "Latte\n", "Espresso\n", "Americano\n", "Cappucino Uno\n"],
-            "\nChoylar\n": ["Karak choy\n", "Malina choy\n", "Limon choy\n", "Sitrus choy\n", "Ko'k/Qora choy\n", "Bardak choy\n\n"],
+            "Salqin ichimliklar": ["Cola", "Fanta", "Pepsi", "Sok", "Gazsiz suv"],
+            "Kofelar": ["Cappucino", "Latte", "Espresso", "Americano", "Cappucino Uno"],
+            "Choylar": ["Karak choy", "Malina choy", "Limon choy", "Sitrus choy", "Ko'k/Qora choy", "Bardak choy"],
         },
         "needs_design": False,
         "needs_color": False,
         "needs_filling": False,
         "needs_text": False,
-        "quantity_hint": "\nMasalan: 1 dona, 2 litr, 3 stakan",
+        "quantity_hint": "Masalan: 1 dona, 2 litr, 3 stakan",
     },
     "Muzqaymoq": {
-        "ask_variant": True,
         "groups": {
-            "\nMevali\n": ["Malinali\n", "Qulupnayli\n", "Qovunli\n", "Olchali\n"],
-            "\nKlassik\n": ["Shokoladli\n", "Pistali\n", "Karamelli\n", "Qaymoqli\n\n"],
+            "Mevali": ["Malinali", "Qulupnayli", "Qovunli", "Olchali"],
+            "Klassik": ["Shokoladli", "Pistali", "Karamelli", "Qaymoqli"],
         },
         "needs_design": False,
         "needs_color": False,
         "needs_filling": False,
         "needs_text": False,
-        "quantity_hint": "\nMasalan: 300 gramm, 500 gramm, 1 kg",
+        "quantity_hint": "Masalan: 300 gramm, 500 gramm, 1 kg",
     },
 }
-
 
 TORT_DECOR_OPTIONS = {
     "1": "O'g'il bolalar uchun topper",
@@ -218,6 +215,207 @@ TORT_DECOR_OPTIONS = {
     "6": "Odatiy",
 }
 
+# =========================================================
+# 🤖 BOT SETUP
+# =========================================================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+)
+logger = logging.getLogger("tort_house_bot")
+
+bot: Bot | None = None
+dp = Dispatcher(storage=MemoryStorage())
+
+# =========================================================
+# 🧠 STATES
+# =========================================================
+class CheckoutStates(StatesGroup):
+    product_variant = State()
+    full_name = State()
+    phone = State()
+    delivery_date = State()
+    delivery_time = State()
+    delivery_type = State()
+    pickup_branch = State()
+    address = State()
+    notes = State()
+    reference_choice = State()
+    reference_text = State()
+    reference_photo = State()
+
+
+class AddToCartStates(StatesGroup):
+    amount = State()
+    design = State()
+    decoration = State()
+    decoration_photos = State()
+    color = State()
+    top_text = State()
+    filling = State()
+    note = State()
+    confirm_add = State()
+
+# =========================================================
+# 🗄️ DATABASE
+# =========================================================
+def get_conn() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_NAME, timeout=30)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
+    cur = conn.cursor()
+    cur.execute(f"PRAGMA table_info({table_name})")
+    return {row[1] for row in cur.fetchall()}
+
+
+def now_str() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def init_db() -> None:
+    with closing(get_conn()) as conn:
+        cur = conn.cursor()
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                username TEXT,
+                full_name TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                delivery_date TEXT,
+                delivery_time TEXT,
+                delivery_type TEXT,
+                pickup_branch TEXT,
+                address TEXT,
+                notes TEXT,
+                reference_type TEXT,
+                custom_description TEXT,
+                reference_photo_id TEXT,
+                total_price TEXT,
+                deposit_amount TEXT,
+                remaining_amount TEXT,
+                payment_type TEXT,
+                payment_check_photo_id TEXT,
+                status TEXT NOT NULL DEFAULT 'waiting_price',
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS order_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER NOT NULL,
+                product_title TEXT NOT NULL,
+                product_category TEXT,
+                product_number INTEGER,
+                quantity_value TEXT NOT NULL,
+                design_text TEXT,
+                decoration_text TEXT,
+                decoration_photo_ids TEXT,
+                color TEXT,
+                top_text TEXT,
+                filling TEXT,
+                extra_note TEXT,
+                FOREIGN KEY(order_id) REFERENCES orders(id)
+            )
+            """
+        )
+
+        existing_columns = table_columns(conn, "order_items")
+        wanted = {
+            "product_number": "INTEGER",
+            "decoration_text": "TEXT",
+            "decoration_photo_ids": "TEXT",
+        }
+        for col, col_type in wanted.items():
+            if col not in existing_columns:
+                cur.execute(f"ALTER TABLE order_items ADD COLUMN {col} {col_type}")
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS product_photos (
+                product_number INTEGER PRIMARY KEY,
+                product_category TEXT NOT NULL,
+                product_title TEXT NOT NULL,
+                photo_id TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+
+        conn.commit()
+
+# =========================================================
+# 🛠️ HELPERS
+# =========================================================
+def get_text(message: Message) -> str:
+    return (message.text or "").strip()
+
+
+def is_admin(user_id: int) -> bool:
+    return user_id in ADMIN_IDS or user_id in SUPER_ADMIN_IDS
+
+
+def is_super_admin(user_id: int) -> bool:
+    return user_id in SUPER_ADMIN_IDS
+
+
+def normalize_optional_text(value: str | None) -> str:
+    cleaned = (value or "").strip()
+    if cleaned.lower() in {"-", "yoq", "yo'q", "yo‘q", "none"}:
+        return ""
+    return cleaned
+
+
+def safe_int_from_money(value: str | int | None) -> int | None:
+    if value is None:
+        return None
+    digits = "".join(ch for ch in str(value) if ch.isdigit())
+    return int(digits) if digits else None
+
+
+def format_money(value: int) -> str:
+    return f"{value:,} so'm".replace(",", " ")
+
+
+def auto_deposit_by_total(total_int: int) -> int:
+    deposit = int(round(total_int * 0.30))
+    return max(deposit, 0)
+
+
+def strip_catalog_value(value: str) -> str:
+    return (value or "").strip()
+
+
+def flatten_variants(category: str) -> list[str]:
+    groups = PRODUCT_CATALOG.get(category, {}).get("groups", {})
+    result: list[str] = []
+    for items in groups.values():
+        result.extend([strip_catalog_value(item) for item in items if strip_catalog_value(item)])
+    return result
+
+
+def build_variant_text(category: str) -> str:
+    groups = PRODUCT_CATALOG.get(category, {}).get("groups", {})
+    lines = [f"<b>{category} bo'limidagi turlar:</b>"]
+    idx = 1
+    for group_name, items in groups.items():
+        lines.append(f"<b>{strip_catalog_value(group_name)}</b>")
+        for item in items:
+            title = strip_catalog_value(item)
+            if title:
+                lines.append(f"{idx}. {title}")
+                idx += 1
+    lines.append("Keraklisini yozing yoki raqamini yuboring.")
+    return "\n".join(lines)
+
 
 def build_product_number_map() -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
@@ -225,13 +423,13 @@ def build_product_number_map() -> list[dict[str, Any]]:
     for category, cfg in PRODUCT_CATALOG.items():
         for group_name, items in cfg.get("groups", {}).items():
             for item in items:
-                title = item.strip()
+                title = strip_catalog_value(item)
                 if title:
                     rows.append(
                         {
                             "number": idx,
                             "category": category,
-                            "group": group_name,
+                            "group": strip_catalog_value(group_name),
                             "title": title,
                         }
                     )
@@ -242,20 +440,33 @@ def build_product_number_map() -> list[dict[str, Any]]:
 PRODUCT_NUMBER_MAP = build_product_number_map()
 PRODUCT_NUMBER_LOOKUP = {row["number"]: row for row in PRODUCT_NUMBER_MAP}
 PRODUCT_KEY_LOOKUP = {(row["category"], row["title"]): row["number"] for row in PRODUCT_NUMBER_MAP}
-tort_groups = PRODUCT_CATALOG.get("Tort", {}).get("groups", {})
-ODDIY_TORT_SET = {item.strip() for item in tort_groups.get("Oddiy tortlar", [])}
-PREMIUM_TORT_SET = {item.strip() for item in tort_groups.get("Premium tortlar", [])} 
+
+ODDIY_TORT_SET = {
+    strip_catalog_value(item)
+    for group_name, items in PRODUCT_CATALOG["Tort"]["groups"].items()
+    if "Oddiy tortlar" in strip_catalog_value(group_name)
+    for item in items
+    if strip_catalog_value(item)
+}
+PREMIUM_TORT_SET = {
+    strip_catalog_value(item)
+    for group_name, items in PRODUCT_CATALOG["Tort"]["groups"].items()
+    if "Premium tortlar" in strip_catalog_value(group_name)
+    for item in items
+    if strip_catalog_value(item)
+}
+
 
 def is_tort_product(category: str) -> bool:
     return category == "Tort"
 
 
 def is_oddiy_tort(product_title: str) -> bool:
-    return product_title.strip() in ODDIY_TORT_SET
+    return strip_catalog_value(product_title) in ODDIY_TORT_SET
 
 
 def is_premium_tort(product_title: str) -> bool:
-    return product_title.strip() in PREMIUM_TORT_SET
+    return strip_catalog_value(product_title) in PREMIUM_TORT_SET
 
 
 def needs_design_for_selection(category: str, product_title: str) -> bool:
@@ -271,158 +482,99 @@ def needs_decoration_for_selection(category: str, product_title: str) -> bool:
 
 
 def get_product_number(category: str, product_title: str) -> int | None:
-    return PRODUCT_KEY_LOOKUP.get((category, product_title.strip()))
-
-# =========================================================
-# 🤖 BOT SETUP
-# =========================================================
-logging.basicConfig(level=logging.INFO)
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-dp = Dispatcher(storage=MemoryStorage())
-
-# =========================================================
-# 🗄️ DATABASE
-# =========================================================
-def get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return PRODUCT_KEY_LOOKUP.get((category, strip_catalog_value(product_title)))
 
 
-def now_str() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+def format_decoration_text(decoration_value: str) -> str:
+    return TORT_DECOR_OPTIONS.get(str(decoration_value), decoration_value or "-")
 
 
-def init_db() -> None:
-    conn = get_conn()
-    cur = conn.cursor()
+def product_photo_caption(title: str) -> str:
+    return f"📷 <b>{title}</b> rasmi"
 
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS orders (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            username TEXT,
-            full_name TEXT NOT NULL,
-            phone TEXT NOT NULL,
-            delivery_date TEXT,
-            delivery_time TEXT,
-            delivery_type TEXT,
-            pickup_branch TEXT,
-            address TEXT,
-            notes TEXT,
-            reference_type TEXT,
-            custom_description TEXT,
-            reference_photo_id TEXT,
-            total_price TEXT,
-            deposit_amount TEXT,
-            remaining_amount TEXT,
-            payment_type TEXT,
-            payment_check_photo_id TEXT,
-            status TEXT NOT NULL DEFAULT 'waiting_price',
-            created_at TEXT NOT NULL
+
+def set_product_photo(product_number: int, category: str, title: str, photo_id: str) -> None:
+    with closing(get_conn()) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO product_photos (product_number, product_category, product_title, photo_id, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(product_number) DO UPDATE SET
+                product_category = excluded.product_category,
+                product_title = excluded.product_title,
+                photo_id = excluded.photo_id,
+                updated_at = excluded.updated_at
+            """,
+            (product_number, category, title, photo_id, now_str()),
         )
-        """
-    )
-
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS order_items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            order_id INTEGER NOT NULL,
-            product_title TEXT NOT NULL,
-            product_category TEXT,
-            quantity_value TEXT NOT NULL,
-            design_text TEXT,
-            color TEXT,
-            top_text TEXT,
-            filling TEXT,
-            extra_note TEXT,
-            FOREIGN KEY(order_id) REFERENCES orders(id)
-        )
-        """
-    )
-
-    conn.commit()
-    conn.close()
-
-# =========================================================
-# 🛠️ HELPERS
-# =========================================================
-def is_admin(user_id: int) -> bool:
-    return user_id in ADMIN_IDS
+        conn.commit()
 
 
-def is_super_admin(user_id: int) -> bool:
-    return user_id in SUPER_ADMIN_IDS
+def get_product_photo(product_number: int) -> str | None:
+    with closing(get_conn()) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT photo_id FROM product_photos WHERE product_number = ?", (product_number,))
+        row = cur.fetchone()
+        return row["photo_id"] if row else None
 
 
-def normalize_optional_text(value: str) -> str:
-    cleaned = value.strip()
-    if cleaned.lower() in {"-", "yoq", "yo'q", "yo'q", "none"}:
-        return ""
-    return cleaned
-
-
-def safe_int_from_money(value: str) -> int | None:
-    digits = "".join(ch for ch in str(value) if ch.isdigit())
-    if not digits:
-        return None
-    return int(digits)
-
-
-def format_money(value: int) -> str:
-    return f"{value:,} so'm".replace(",", " ")
-
-
-def auto_deposit_by_total(total_int: int) -> int:
-    if total_int >= 300000:
-        return BIG_DEPOSIT
-    if total_int >= 100000:
-        return MID_DEPOSIT
-    return MIN_DEPOSIT
-
-
-def flatten_variants(category: str) -> list[str]:
-    groups = PRODUCT_CATALOG.get(category, {}).get("groups", {})
-    variants: list[str] = []
-    for items in groups.values():
-        variants.extend(items)
-    return variants
-
-
-def build_variant_text(category: str) -> str:
-    groups = PRODUCT_CATALOG.get(category, {}).get("groups", {})
-    lines = [f"<b>{category} bo'limidagi turlar:</b>\n", ""]
-    idx = 1
-    for group_name, items in groups.items():
-        lines.append(f"<b>{group_name}</b>")
-        for item in items:
-            lines.append(f"{idx}. {item}")
-            idx += 1
-        lines.append("")
-    lines.append("Keraklisini yozing yoki raqamini yuboring.")
+def get_product_list_text() -> str:
+    lines = ["<b>📦 Mahsulotlar ro'yxati</b>"]
+    current_category = None
+    for row in PRODUCT_NUMBER_MAP:
+        if row["category"] != current_category:
+            current_category = row["category"]
+            lines.append(f"\n<b>{current_category}</b>")
+        lines.append(f"{row['number']}. {row['title']}")
+    lines.append("\nRasm biriktirish: <code>/setphoto RAQAM</code>")
     return "\n".join(lines)
 
 
-def build_simple_cart_text(cart: list[dict]) -> str:
+async def safe_send_message(chat_id: int, text: str, **kwargs: Any) -> None:
+    if bot is None:
+        return
+    try:
+        await bot.send_message(chat_id, text, **kwargs)
+    except Exception:
+        logger.exception("Failed to send message to %s", chat_id)
+
+
+async def safe_send_photo(chat_id: int, photo: str, **kwargs: Any) -> None:
+    if bot is None:
+        return
+    try:
+        await bot.send_photo(chat_id, photo=photo, **kwargs)
+    except Exception:
+        logger.exception("Failed to send photo to %s", chat_id)
+
+
+def build_simple_cart_text(cart: list[dict[str, Any]]) -> str:
     if not cart:
         return "🛒 Savat bo'sh."
-    lines = ["<b>🛒 Savat:</b>\n", ""]
+    lines = ["<b>🛒 Savat:</b>"]
     for i, item in enumerate(cart, start=1):
-        lines.append(f"{i}. <b>{item.get('product_title', '-')}</b>\n")
-        lines.append(f"   📏 Miqdori: {item.get('quantity_value', '-')}\n")
+        lines.append(f"{i}. <b>{item.get('product_title', '-')}</b>")
+        lines.append(f"   📏 Miqdori: {item.get('quantity_value', '-')}")
         if item.get("design_text"):
-            lines.append(f"   🧁 Dizayn: {item['design_text']}\n")
+            lines.append(f"   🧁 Dizayn: {item['design_text']}")
+        if item.get("decoration_text"):
+            lines.append(f"   ✨ Bezak: {item['decoration_text']}")
+        if item.get("decoration_photo_ids"):
+            try:
+                count = len(json.loads(item["decoration_photo_ids"])) if isinstance(item["decoration_photo_ids"], str) else len(item["decoration_photo_ids"])
+            except Exception:
+                count = 0
+            if count:
+                lines.append(f"   🖼 Bezak rasmlari: {count} ta")
         if item.get("color"):
-            lines.append(f"   🎨 Rang: {item['color']}\n")
+            lines.append(f"   🎨 Rang: {item['color']}")
         if item.get("top_text"):
-            lines.append(f"   ✍️ Yozuv: {item['top_text']}\n")
+            lines.append(f"   ✍️ Yozuv: {item['top_text']}")
         if item.get("filling"):
-            lines.append(f"   🍓 Ta'm: {item['filling']}\n")
+            lines.append(f"   🍓 Ta'm: {item['filling']}")
         if item.get("extra_note"):
-            lines.append(f"   📝 Izoh: {item['extra_note']}\n")
-        lines.append("")
+            lines.append(f"   📝 Izoh: {item['extra_note']}")
     return "\n".join(lines)
 
 
@@ -440,262 +592,227 @@ def create_order_from_simple_cart(
     reference_type: str,
     custom_description: str,
     reference_photo_id: str,
-    cart: list[dict],
+    cart: list[dict[str, Any]],
 ) -> int | None:
     if not cart:
         return None
 
-    conn = get_conn()
-    cur = conn.cursor()
-
-    cur.execute(
-        """
-        INSERT INTO orders (
-            user_id,
-            username,
-            full_name,
-            phone,
-            delivery_date,
-            delivery_time,
-            delivery_type,
-            pickup_branch,
-            address,
-            notes,
-            reference_type,
-            custom_description,
-            reference_photo_id,
-            status,
-            created_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            user_id,
-            username,
-            full_name,
-            phone,
-            delivery_date,
-            delivery_time,
-            delivery_type,
-            pickup_branch,
-            address,
-            notes,
-            reference_type,
-            custom_description,
-            reference_photo_id,
-            STATUS_WAITING_PRICE,
-            now_str(),
-        ),
-    )
-
-    order_id = cur.lastrowid
-
-    for item in cart:
+    with closing(get_conn()) as conn:
+        cur = conn.cursor()
         cur.execute(
             """
-            INSERT INTO order_items (
-                order_id,
-                product_title,
-                product_category,
-                quantity_value,
-                design_text,
-                color,
-                top_text,
-                filling,
-                extra_note
+            INSERT INTO orders (
+                user_id, username, full_name, phone, delivery_date, delivery_time, delivery_type,
+                pickup_branch, address, notes, reference_type, custom_description, reference_photo_id,
+                status, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                order_id,
-                item.get("product_title", ""),
-                item.get("product_category", ""),
-                item.get("quantity_value", ""),
-                item.get("design_text", ""),
-                item.get("color", ""),
-                item.get("top_text", ""),
-                item.get("filling", ""),
-                item.get("extra_note", ""),
+                user_id,
+                username,
+                full_name,
+                phone,
+                delivery_date,
+                delivery_time,
+                delivery_type,
+                pickup_branch,
+                address,
+                notes,
+                reference_type,
+                custom_description,
+                reference_photo_id,
+                STATUS_WAITING_PRICE,
+                now_str(),
             ),
         )
+        order_id = int(cur.lastrowid)
 
-    conn.commit()
-    conn.close()
-    return order_id
+        for item in cart:
+            cur.execute(
+                """
+                INSERT INTO order_items (
+                    order_id, product_title, product_category, product_number, quantity_value,
+                    design_text, decoration_text, decoration_photo_ids, color, top_text, filling, extra_note
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    order_id,
+                    item.get("product_title", ""),
+                    item.get("product_category", ""),
+                    item.get("product_number"),
+                    item.get("quantity_value", ""),
+                    item.get("design_text", ""),
+                    item.get("decoration_text", ""),
+                    json.dumps(item.get("decoration_photo_ids", []), ensure_ascii=False),
+                    item.get("color", ""),
+                    item.get("top_text", ""),
+                    item.get("filling", ""),
+                    item.get("extra_note", ""),
+                ),
+            )
+
+        conn.commit()
+        return order_id
+
 
 def get_order_items(order_id: int) -> list[sqlite3.Row]:
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM order_items WHERE order_id = ? ORDER BY id", (order_id,))
-    rows = cur.fetchall()
-    conn.close()
-    return rows
+    with closing(get_conn()) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM order_items WHERE order_id = ? ORDER BY id", (order_id,))
+        return cur.fetchall()
 
 
 def get_order_basic(order_id: int) -> sqlite3.Row | None:
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM orders WHERE id = ?", (order_id,))
-    row = cur.fetchone()
-    conn.close()
-    return row
+    with closing(get_conn()) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM orders WHERE id = ?", (order_id,))
+        return cur.fetchone()
 
 
 def build_order_preview(order_id: int) -> str:
     order = get_order_basic(order_id)
     items = get_order_items(order_id)
-    lines = [f"<b>🆕 Yangi zakaz #{order_id}</b>\n", ""]
+    lines = [f"<b>🆕 Yangi zakaz #{order_id}</b>"]
     for idx, item in enumerate(items, start=1):
-        lines.append(f"{idx}. <b>{item['product_title']}</b>\n")
-        lines.append(f"   📏 Miqdori: {item['quantity_value']}\n")
-        if item['design_text']:
-            lines.append(f"   🧁 Dizayn: {item['design_text']}\n")
-        if item['color']:
-            lines.append(f"   🎨 Rang: {item['color']}\n")
-        if item['top_text']:
-            lines.append(f"   ✍️ Yozuv: {item['top_text']}\n")
-        if item['filling']:
-            lines.append(f"   🍓 Ta'm: {item['filling']}\n")
-        if item['extra_note']:
-            lines.append(f"   📝 Izoh: {item['extra_note']}\n")
-        lines.append("")
-
+        lines.append(f"{idx}. <b>{item['product_title']}</b>")
+        lines.append(f"   📏 Miqdori: {item['quantity_value']}")
+        if item["design_text"]:
+            lines.append(f"   🧁 Dizayn: {item['design_text']}")
+        if item["decoration_text"]:
+            lines.append(f"   ✨ Bezak: {item['decoration_text']}")
+        if item["decoration_photo_ids"]:
+            try:
+                count = len(json.loads(item["decoration_photo_ids"]))
+            except Exception:
+                count = 0
+            if count:
+                lines.append(f"   🖼 Bezak rasmlari: {count} ta")
+        if item["color"]:
+            lines.append(f"   🎨 Rang: {item['color']}")
+        if item["top_text"]:
+            lines.append(f"   ✍️ Yozuv: {item['top_text']}")
+        if item["filling"]:
+            lines.append(f"   🍓 Ta'm: {item['filling']}")
+        if item["extra_note"]:
+            lines.append(f"   📝 Izoh: {item['extra_note']}")
     if order:
-        lines.append(f"👤 Ism: {order['full_name']}\n")
-        lines.append(f"📞 Telefon: {order['phone']}\n")
-        lines.append(f"📅 Sana: {order['delivery_date'] or '-'}\n")
-        lines.append(f"⏰ Vaqt: {order['delivery_time'] or '-'}\n")
-        lines.append(f"🚚 Yetkazish turi: {order['delivery_type'] or '-'}\n")
-        if order['pickup_branch']:
-            lines.append(f"🏬 Filial: {order['pickup_branch']}\n")
-        if order['address']:
-            lines.append(f"📍 Manzil: {order['address']}\n")
-        if order['notes']:
-            lines.append(f"📝 Izoh: {order['notes']}\n")
-        if order['reference_type']:
-            lines.append(f"📌 Namuna turi: {order['reference_type']}\n")
-        if order['custom_description']:
-            lines.append(f"✍️ Qo'shimcha tarif: {order['custom_description']}\n")
-
-    lines.append("")
+        lines.append(f"👤 Ism: {order['full_name']}")
+        lines.append(f"📞 Telefon: {order['phone']}")
+        lines.append(f"📅 Sana: {order['delivery_date'] or '-'}")
+        lines.append(f"⏰ Vaqt: {order['delivery_time'] or '-'}")
+        lines.append(f"🚚 Yetkazish turi: {order['delivery_type'] or '-'}")
+        if order["pickup_branch"]:
+            lines.append(f"🏬 Filial: {order['pickup_branch']}")
+        if order["address"]:
+            lines.append(f"📍 Manzil: {order['address']}")
+        if order["notes"]:
+            lines.append(f"📝 Izoh: {order['notes']}")
+        if order["reference_type"]:
+            lines.append(f"📌 Namuna turi: {order['reference_type']}")
+        if order["custom_description"]:
+            lines.append(f"✍️ Qo'shimcha tarif: {order['custom_description']}")
     lines.append(f"💬 Narx va zakolat yuborish: <code>/price {order_id} 150000</code>")
-    lines.append(f"💬 Yoki depozit bilan: <code>/price {order_id} 150000 30000</code>")
     return "\n".join(lines)
 
 
 def set_order_price(order_id: int, total_price: str, deposit_amount: str, remaining_amount: str) -> tuple[bool, int | None]:
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("SELECT user_id FROM orders WHERE id = ?", (order_id,))
-    row = cur.fetchone()
-    if not row:
-        conn.close()
-        return False, None
-
-    user_id = row[0]
-    cur.execute(
-        "UPDATE orders SET total_price = ?, deposit_amount = ?, remaining_amount = ?, status = ? WHERE id = ?",
-        (total_price, deposit_amount, remaining_amount, STATUS_PRICED, order_id),
-    )
-    conn.commit()
-    conn.close()
-    return True, user_id
+    with closing(get_conn()) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT user_id FROM orders WHERE id = ?", (order_id,))
+        row = cur.fetchone()
+        if not row:
+            return False, None
+        user_id = row[0]
+        cur.execute(
+            "UPDATE orders SET total_price = ?, deposit_amount = ?, remaining_amount = ?, status = ? WHERE id = ?",
+            (total_price, deposit_amount, remaining_amount, STATUS_PRICED, order_id),
+        )
+        conn.commit()
+        return True, user_id
 
 
 def set_payment_type(order_id: int, payment_type: str) -> None:
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute(
-        "UPDATE orders SET payment_type = ?, status = ? WHERE id = ?",
-        (payment_type, STATUS_AWAITING_DEPOSIT_CHECK, order_id),
-    )
-    conn.commit()
-    conn.close()
+    with closing(get_conn()) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE orders SET payment_type = ?, status = ? WHERE id = ?",
+            (payment_type, STATUS_AWAITING_DEPOSIT_CHECK, order_id),
+        )
+        conn.commit()
 
 
 def save_payment_check(order_id: int, photo_id: str) -> None:
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute(
-        "UPDATE orders SET payment_check_photo_id = ?, status = ? WHERE id = ?",
-        (photo_id, STATUS_DEPOSIT_SENT, order_id),
-    )
-    conn.commit()
-    conn.close()
+    with closing(get_conn()) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE orders SET payment_check_photo_id = ?, status = ? WHERE id = ?",
+            (photo_id, STATUS_DEPOSIT_SENT, order_id),
+        )
+        conn.commit()
 
 
 def update_order_status(order_id: int, status: str) -> tuple[bool, int | None]:
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("SELECT user_id FROM orders WHERE id = ?", (order_id,))
-    row = cur.fetchone()
-    if not row:
-        conn.close()
-        return False, None
-    user_id = row[0]
-    cur.execute("UPDATE orders SET status = ? WHERE id = ?", (status, order_id))
-    conn.commit()
-    conn.close()
-    return True, user_id
+    with closing(get_conn()) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT user_id FROM orders WHERE id = ?", (order_id,))
+        row = cur.fetchone()
+        if not row:
+            return False, None
+        user_id = row[0]
+        cur.execute("UPDATE orders SET status = ? WHERE id = ?", (status, order_id))
+        conn.commit()
+        return True, user_id
 
 
 def get_latest_actionable_order_for_user(user_id: int) -> sqlite3.Row | None:
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT *
-        FROM orders
-        WHERE user_id = ?
-          AND status IN (?, ?, ?)
-        ORDER BY id DESC
-        LIMIT 1
-        """,
-        (user_id, STATUS_PRICED, STATUS_AWAITING_DEPOSIT_CHECK, STATUS_DEPOSIT_SENT),
-    )
-    row = cur.fetchone()
-    conn.close()
-    return row
+    with closing(get_conn()) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT *
+            FROM orders
+            WHERE user_id = ?
+              AND status IN (?, ?, ?)
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (user_id, STATUS_PRICED, STATUS_AWAITING_DEPOSIT_CHECK, STATUS_DEPOSIT_SENT),
+        )
+        return cur.fetchone()
 
 
 def get_orders_count() -> int:
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM orders")
-    count = cur.fetchone()[0]
-    conn.close()
-    return count
+    with closing(get_conn()) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM orders")
+        return cur.fetchone()[0]
 
 
 def get_today_orders_count() -> int:
     today = datetime.now().strftime("%Y-%m-%d")
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM orders WHERE created_at LIKE ?", (f"{today}%",))
-    count = cur.fetchone()[0]
-    conn.close()
-    return count
+    with closing(get_conn()) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM orders WHERE created_at LIKE ?", (f"{today}%",))
+        return cur.fetchone()[0]
 
 
 def get_last_orders(limit: int = 10) -> list[sqlite3.Row]:
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM orders ORDER BY id DESC LIMIT ?", (limit,))
-    rows = cur.fetchall()
-    conn.close()
-    return rows
+    with closing(get_conn()) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM orders ORDER BY id DESC LIMIT ?", (limit,))
+        return cur.fetchall()
 
 
 def get_period_orders(start_date: datetime, end_date: datetime) -> list[sqlite3.Row]:
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT * FROM orders WHERE created_at >= ? AND created_at < ? ORDER BY id DESC",
-        (start_date.strftime("%Y-%m-%d %H:%M:%S"), end_date.strftime("%Y-%m-%d %H:%M:%S")),
-    )
-    rows = cur.fetchall()
-    conn.close()
-    return rows
+    with closing(get_conn()) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM orders WHERE created_at >= ? AND created_at < ? ORDER BY id DESC",
+            (start_date.strftime("%Y-%m-%d %H:%M:%S"), end_date.strftime("%Y-%m-%d %H:%M:%S")),
+        )
+        return cur.fetchall()
 
 
 def sum_money_from_rows(rows: list[sqlite3.Row], column: str) -> int:
@@ -729,40 +846,14 @@ def build_admin_stats_text() -> str:
             f"💰 Umumiy narxlar yig'indisi: {format_money(total_declared)}"
         )
 
-    return "".join([
-       "<b>📊 Pro statistika</b>",
-        stats_block("📅 Kunlik", daily),
-        stats_block("🗓 Haftalik", weekly),
-        stats_block("📆 Oylik", monthly),])
-
-# =========================================================
-# 🧠 STATES
-# =========================================================
-class CheckoutStates(StatesGroup):
-    product_variant = State()
-    full_name = State()
-    phone = State()
-    delivery_date = State()
-    delivery_time = State()
-    delivery_type = State()
-    pickup_branch = State()
-    address = State()
-    notes = State()
-    reference_choice = State()
-    reference_text = State()
-    reference_photo = State()
-
-
-class AddToCartStates(StatesGroup):
-    amount = State()
-    design = State()
-    decoration = State()
-    decoration_photos = State()
-    color = State()
-    top_text = State()
-    filling = State()
-    note = State()
-    confirm_add = State()
+    return "\n\n".join(
+        [
+            "<b>📊 Pro statistika</b>",
+            stats_block("📅 Kunlik", daily),
+            stats_block("🗓 Haftalik", weekly),
+            stats_block("📆 Oylik", monthly),
+        ]
+    )
 
 # =========================================================
 # ⌨️ KEYBOARDS
@@ -779,21 +870,14 @@ def main_keyboard() -> ReplyKeyboardMarkup:
 
 def phone_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📱 Raqam yuborish", request_contact=True)],
-            [KeyboardButton(text="🔙 Ortga")],
-        ],
+        keyboard=[[KeyboardButton(text="📱 Raqam yuborish", request_contact=True)], [KeyboardButton(text="🔙 Ortga")]],
         resize_keyboard=True,
         one_time_keyboard=True,
     )
 
 
 def only_back_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="🔙 Ortga")]],
-        resize_keyboard=True,
-        one_time_keyboard=True,
-    )
+    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="🔙 Ortga")]], resize_keyboard=True, one_time_keyboard=True)
 
 
 def decoration_keyboard() -> ReplyKeyboardMarkup:
@@ -810,10 +894,7 @@ def decoration_keyboard() -> ReplyKeyboardMarkup:
 
 def decoration_photo_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="✅ Davom etish")],
-            [KeyboardButton(text="🔙 Ortga")],
-        ],
+        keyboard=[[KeyboardButton(text="✅ Davom etish")], [KeyboardButton(text="🔙 Ortga")]],
         resize_keyboard=True,
         one_time_keyboard=True,
     )
@@ -858,10 +939,7 @@ def reference_keyboard() -> ReplyKeyboardMarkup:
 
 def add_to_cart_finish_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="✅ Savatga qo'shish")],
-            [KeyboardButton(text="🔙 Ortga")],
-        ],
+        keyboard=[[KeyboardButton(text="✅ Savatga qo'shish")], [KeyboardButton(text="🔙 Ortga")]],
         resize_keyboard=True,
         one_time_keyboard=True,
     )
@@ -915,16 +993,17 @@ def admin_keyboard() -> ReplyKeyboardMarkup:
 
 
 def copy_card_keyboard() -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    kb.button(text="📋 Karta raqamni nusxalash", copy_text=CopyTextButton(text=CARD_NUMBER))
+    buttons: list[list[InlineKeyboardButton]] = [[InlineKeyboardButton(text=f"💳 Karta: {CARD_NUMBER}", callback_data="noop")]]
+    pay_row: list[InlineKeyboardButton] = []
     if PAYME_URL:
-        kb.button(text="💜 Payme", url=PAYME_URL)
+        pay_row.append(InlineKeyboardButton(text="💜 Payme", url=PAYME_URL))
     if CLICK_URL:
-        kb.button(text="💙 Click", url=CLICK_URL)
+        pay_row.append(InlineKeyboardButton(text="💙 Click", url=CLICK_URL))
     if UZUM_URL:
-        kb.button(text="🟣 Uzum", url=UZUM_URL)
-    kb.adjust(1, 3)
-    return kb.as_markup()
+        pay_row.append(InlineKeyboardButton(text="🟣 Uzum", url=UZUM_URL))
+    if pay_row:
+        buttons.append(pay_row)
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def admin_order_actions_keyboard(order_id: int) -> InlineKeyboardMarkup:
@@ -938,13 +1017,20 @@ def admin_order_actions_keyboard(order_id: int) -> InlineKeyboardMarkup:
     kb.adjust(2, 2, 2)
     return kb.as_markup()
 
-
-def needs_design(category: str) -> bool:
-    return bool(PRODUCT_CATALOG.get(category, {}).get("needs_design"))
-
 # =========================================================
 # 🏠 MAIN / ADMIN ENTRY
 # =========================================================
+@dp.callback_query(F.data == "noop")
+async def noop_callback(callback: CallbackQuery) -> None:
+    await callback.answer("Karta raqami yuqorida ko'rsatilgan.")
+
+
+@dp.errors()
+async def global_error_handler(event: Any) -> bool:
+    logger.exception("Unhandled update error: %s", event.exception)
+    return True
+
+
 @dp.message(CommandStart())
 async def start_handler(message: Message, state: FSMContext) -> None:
     await state.clear()
@@ -969,7 +1055,7 @@ async def info_handler(message: Message) -> None:
 @dp.message(F.text == "📞 Aloqa")
 async def contact_handler(message: Message) -> None:
     await message.answer(
-        f"📞 Aloqa uchun:{PHONE_TEXT}\n"
+        f"📞 Aloqa uchun:\n{PHONE_TEXT}\n"
         f"💬 Telegram: {TELEGRAM_TEXT}\n"
         f"🕘 Ish vaqti: {WORK_TIME_TEXT}"
     )
@@ -980,7 +1066,11 @@ async def open_catalog(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     cart = data.get("simple_cart", [])
     await state.clear()
-    await state.update_data(user_id=message.from_user.id, username=message.from_user.username or "", simple_cart=cart)
+    await state.update_data(
+        user_id=message.from_user.id,
+        username=message.from_user.username or "",
+        simple_cart=cart,
+    )
     await message.answer(
         "⏰ Muhim eslatma:\n"
         "Zakazni kamida 1 kun oldin, ayrim murakkab mahsulotlarni esa 2 kun oldin berishingiz kerak.\n"
@@ -1000,12 +1090,7 @@ async def back_to_menu(message: Message, state: FSMContext) -> None:
 
 @dp.message(F.text.in_(["Tort", "Trayfel", "Pirojniy", "Ichimliklar", "Somsa", "Kruassan", "Muzqaymoq"]))
 async def open_category_products(message: Message, state: FSMContext) -> None:
-    category = message.text.strip()
-    catalog = PRODUCT_CATALOG.get(category)
-    if not catalog:
-        await message.answer("Bu bo'lim topilmadi.")
-        return
-
+    category = get_text(message)
     data = await state.get_data()
     cart = data.get("simple_cart", [])
     await state.clear()
@@ -1016,7 +1101,6 @@ async def open_category_products(message: Message, state: FSMContext) -> None:
         product_category=category,
         simple_cart=cart,
     )
-
     await message.answer(build_variant_text(category), reply_markup=only_back_keyboard())
     await state.set_state(CheckoutStates.product_variant)
 
@@ -1035,12 +1119,12 @@ async def get_product_variant(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     category = data.get("selected_category", "")
     variants = flatten_variants(category)
-    selected_variant = None
 
+    selected_variant = None
     if text.isdigit():
-        index = int(text) - 1
-        if 0 <= index < len(variants):
-            selected_variant = variants[index]
+        idx = int(text) - 1
+        if 0 <= idx < len(variants):
+            selected_variant = variants[idx]
     else:
         for item in variants:
             if text.lower() == item.lower():
@@ -1051,33 +1135,33 @@ async def get_product_variant(message: Message, state: FSMContext) -> None:
         await message.answer(f"Iltimos, {category} uchun raqam yoki nomdan birini to'g'ri yuboring.")
         return
 
-    hint = PRODUCT_CATALOG.get(category, {}).get("quantity_hint", "Masalan: 1 dona, 500 gramm, 10 kishilik")
     product_number = get_product_number(category, selected_variant)
     await state.update_data(
         selected_product=selected_variant,
         product_title=selected_variant,
         product_category=category,
         product_number=product_number,
+        design_text="",
         decoration="",
         decoration_photo_ids=[],
+        color="",
+        top_text="",
+        filling="",
+        extra_note="",
     )
 
     if product_number:
         photo_id = get_product_photo(product_number)
         if photo_id:
-            await safe_send_photo(
-                message.chat.id,
-                photo_id,
-                caption=f"📷 <b>{selected_variant}</b> rasmi",
-            )
+            await safe_send_photo(message.chat.id, photo_id, caption=product_photo_caption(selected_variant))
 
+    hint = PRODUCT_CATALOG.get(category, {}).get("quantity_hint", "Masalan: 1 dona")
     await message.answer(f"📏 Miqdorini kiriting:\n{hint}", reply_markup=only_back_keyboard())
     await state.set_state(AddToCartStates.amount)
 
 # =========================================================
 # 🛒 CART FLOW
 # =========================================================
-
 @dp.message(AddToCartStates.amount)
 async def cart_amount(message: Message, state: FSMContext) -> None:
     text = get_text(message)
@@ -1125,9 +1209,7 @@ async def cart_amount(message: Message, state: FSMContext) -> None:
 
     if PRODUCT_CATALOG.get(category, {}).get("needs_filling"):
         await message.answer(
-            "🍓 Ta'm / nachinkani kiriting.\n"
-            "Masalan: 1-chi qavati bananli, 2-chi qavati mag'izli\n"
-            "Kerak bo'lmasa 'yo'q' deb yozing.",
+            "🍓 Ta'm / nachinkani kiriting.\nMasalan: 1-chi qavati bananli, 2-chi qavati mag'izli\nKerak bo'lmasa 'yo'q' deb yozing.",
             reply_markup=only_back_keyboard(),
         )
         await state.set_state(AddToCartStates.filling)
@@ -1169,23 +1251,8 @@ async def cart_design(message: Message, state: FSMContext) -> None:
         await state.set_state(AddToCartStates.color)
         return
 
-    if PRODUCT_CATALOG.get(category, {}).get("needs_text"):
-        await message.answer("✍️ Ustiga yozuvni kiriting.\nKerak bo'lmasa 'yo'q' deb yozing.", reply_markup=only_back_keyboard())
-        await state.set_state(AddToCartStates.top_text)
-        return
-
-    if PRODUCT_CATALOG.get(category, {}).get("needs_filling"):
-        await message.answer(
-            "🍓 Ta'm / nachinkani kiriting.\n"
-            "Masalan: 1-chi qavati bananli, 2-chi qavati mag'izli\n"
-            "Kerak bo'lmasa 'yo'q' deb yozing.",
-            reply_markup=only_back_keyboard(),
-        )
-        await state.set_state(AddToCartStates.filling)
-        return
-
-    await message.answer("📝 Qo'shimcha izoh yozing.\nBo'lmasa 'yo'q' deb yozing.", reply_markup=only_back_keyboard())
-    await state.set_state(AddToCartStates.note)
+    await message.answer("✍️ Ustiga yozuvni kiriting.\nKerak bo'lmasa 'yo'q' deb yozing.", reply_markup=only_back_keyboard())
+    await state.set_state(AddToCartStates.top_text)
 
 
 @dp.message(AddToCartStates.decoration)
@@ -1193,9 +1260,7 @@ async def cart_decoration(message: Message, state: FSMContext) -> None:
     text = get_text(message)
     if text == "🔙 Ortga":
         data = await state.get_data()
-        category = data.get("product_category", "")
-        product_title = data.get("product_title", "")
-        if needs_design_for_selection(category, product_title):
+        if needs_design_for_selection(data.get("product_category", ""), data.get("product_title", "")):
             await state.set_state(AddToCartStates.design)
             await message.answer("🧁 Dizayni qanday bo'lsin?", reply_markup=only_back_keyboard())
         else:
@@ -1204,14 +1269,14 @@ async def cart_decoration(message: Message, state: FSMContext) -> None:
         return
 
     if text not in TORT_DECOR_OPTIONS:
-        await message.answer("Iltimos, bezak uchun 1 dan 6 gacha bo'lgan tugmalardan birini tanlang.", reply_markup=decoration_keyboard())
+        await message.answer("Iltimos, 1 dan 6 gacha tanlang.", reply_markup=decoration_keyboard())
         return
 
     await state.update_data(decoration=text, decoration_photo_ids=[])
 
     if text == "3":
         await message.answer(
-            "📸 Chopakli rasmli bezak tanlandi.\nKamida 4 ta rasm tashlang, bo'lgach ✅ Davom etish ni bosing.",
+            "📸 Chopakli rasmli bezak tanlandi.\nKamida 4 ta rasm tashlang. Bo'lgach ✅ Davom etish ni bosing.",
             reply_markup=decoration_photo_keyboard(),
         )
         await state.set_state(AddToCartStates.decoration_photos)
@@ -1219,37 +1284,20 @@ async def cart_decoration(message: Message, state: FSMContext) -> None:
 
     if text == "4":
         await message.answer(
-            "📸 Vaflili rasmli bezak tanlandi.\nKamida 1 ta rasm tashlang, bo'lgach ✅ Davom etish ni bosing.",
+            "📸 Vaflili rasmli bezak tanlandi.\nKamida 1 ta rasm tashlang. Bo'lgach ✅ Davom etish ni bosing.",
             reply_markup=decoration_photo_keyboard(),
         )
         await state.set_state(AddToCartStates.decoration_photos)
         return
 
     data = await state.get_data()
-    category = data.get("product_category", "")
-    product_title = data.get("product_title", "")
-    if needs_color_for_selection(category, product_title):
+    if needs_color_for_selection(data.get("product_category", ""), data.get("product_title", "")):
         await message.answer("🎨 Rangini kiriting.\nKerak bo'lmasa 'yo'q' deb yozing.", reply_markup=only_back_keyboard())
         await state.set_state(AddToCartStates.color)
         return
 
-    if PRODUCT_CATALOG.get(category, {}).get("needs_text"):
-        await message.answer("✍️ Ustiga yozuvni kiriting.\nKerak bo'lmasa 'yo'q' deb yozing.", reply_markup=only_back_keyboard())
-        await state.set_state(AddToCartStates.top_text)
-        return
-
-    if PRODUCT_CATALOG.get(category, {}).get("needs_filling"):
-        await message.answer(
-            "🍓 Ta'm / nachinkani kiriting.\n"
-            "Masalan: 1-chi qavati bananli, 2-chi qavati mag'izli\n"
-            "Kerak bo'lmasa 'yo'q' deb yozing.",
-            reply_markup=only_back_keyboard(),
-        )
-        await state.set_state(AddToCartStates.filling)
-        return
-
-    await message.answer("📝 Qo'shimcha izoh yozing.\nBo'lmasa 'yo'q' deb yozing.", reply_markup=only_back_keyboard())
-    await state.set_state(AddToCartStates.note)
+    await message.answer("✍️ Ustiga yozuvni kiriting.\nKerak bo'lmasa 'yo'q' deb yozing.", reply_markup=only_back_keyboard())
+    await state.set_state(AddToCartStates.top_text)
 
 
 @dp.message(AddToCartStates.decoration_photos, F.photo)
@@ -1259,20 +1307,20 @@ async def cart_decoration_photo_collect(message: Message, state: FSMContext) -> 
     photo_ids.append(message.photo[-1].file_id)
     await state.update_data(decoration_photo_ids=photo_ids)
     decoration = data.get("decoration")
-    required = 4 if decoration == "3" else 1
+    need = 4 if decoration == "3" else 1
     await message.answer(
-        f"✅ Rasm qabul qilindi. Hozir {len(photo_ids)} ta rasm bor. Keraklisi {required} ta.\nTayyor bo'lsa ✅ Davom etish ni bosing.",
+        f"✅ Rasm qabul qilindi. Hozir {len(photo_ids)} ta rasm bor. Keraklisi {need} ta.\nTayyor bo'lsa ✅ Davom etish ni bosing.",
         reply_markup=decoration_photo_keyboard(),
     )
 
 
 @dp.message(AddToCartStates.decoration_photos)
-async def cart_decoration_photos_text(message: Message, state: FSMContext) -> None:
+async def cart_decoration_photo_text(message: Message, state: FSMContext) -> None:
     text = get_text(message)
     data = await state.get_data()
 
     if text == "🔙 Ortga":
-        await state.update_data(decoration_photo_ids=[], decoration="")
+        await state.update_data(decoration="", decoration_photo_ids=[])
         await state.set_state(AddToCartStates.decoration)
         await message.answer("✨ Bezak turini tanlang:", reply_markup=decoration_keyboard())
         return
@@ -1283,38 +1331,18 @@ async def cart_decoration_photos_text(message: Message, state: FSMContext) -> No
 
     decoration = data.get("decoration")
     photo_ids = list(data.get("decoration_photo_ids", []))
-    required = 4 if decoration == "3" else 1
-    if len(photo_ids) < required:
-        await message.answer(
-            f"Kamida {required} ta rasm kerak. Hozir {len(photo_ids)} ta rasm bor.",
-            reply_markup=decoration_photo_keyboard(),
-        )
+    need = 4 if decoration == "3" else 1
+    if len(photo_ids) < need:
+        await message.answer(f"Kamida {need} ta rasm kerak. Hozir {len(photo_ids)} ta.", reply_markup=decoration_photo_keyboard())
         return
 
-    category = data.get("product_category", "")
-    product_title = data.get("product_title", "")
-    if needs_color_for_selection(category, product_title):
+    if needs_color_for_selection(data.get("product_category", ""), data.get("product_title", "")):
         await message.answer("🎨 Rangini kiriting.\nKerak bo'lmasa 'yo'q' deb yozing.", reply_markup=only_back_keyboard())
         await state.set_state(AddToCartStates.color)
         return
 
-    if PRODUCT_CATALOG.get(category, {}).get("needs_text"):
-        await message.answer("✍️ Ustiga yozuvni kiriting.\nKerak bo'lmasa 'yo'q' deb yozing.", reply_markup=only_back_keyboard())
-        await state.set_state(AddToCartStates.top_text)
-        return
-
-    if PRODUCT_CATALOG.get(category, {}).get("needs_filling"):
-        await message.answer(
-            "🍓 Ta'm / nachinkani kiriting.\n"
-            "Masalan: 1-chi qavati bananli, 2-chi qavati mag'izli\n"
-            "Kerak bo'lmasa 'yo'q' deb yozing.",
-            reply_markup=only_back_keyboard(),
-        )
-        await state.set_state(AddToCartStates.filling)
-        return
-
-    await message.answer("📝 Qo'shimcha izoh yozing.\nBo'lmasa 'yo'q' deb yozing.", reply_markup=only_back_keyboard())
-    await state.set_state(AddToCartStates.note)
+    await message.answer("✍️ Ustiga yozuvni kiriting.\nKerak bo'lmasa 'yo'q' deb yozing.", reply_markup=only_back_keyboard())
+    await state.set_state(AddToCartStates.top_text)
 
 
 @dp.message(AddToCartStates.color)
@@ -1322,40 +1350,21 @@ async def cart_color(message: Message, state: FSMContext) -> None:
     text = get_text(message)
     if text == "🔙 Ortga":
         data = await state.get_data()
-        category = data.get("product_category", "")
-        product_title = data.get("product_title", "")
-        if needs_decoration_for_selection(category, product_title):
+        if data.get("decoration"):
             await state.set_state(AddToCartStates.decoration)
             await message.answer("✨ Bezak turini tanlang:", reply_markup=decoration_keyboard())
-        elif needs_design_for_selection(category, product_title):
+            return
+        if needs_design_for_selection(data.get("product_category", ""), data.get("product_title", "")):
             await state.set_state(AddToCartStates.design)
             await message.answer("🧁 Dizayni qanday bo'lsin?", reply_markup=only_back_keyboard())
-        else:
-            await state.set_state(AddToCartStates.amount)
-            await message.answer("📏 Miqdorini kiriting:", reply_markup=only_back_keyboard())
+            return
+        await state.set_state(AddToCartStates.amount)
+        await message.answer("📏 Miqdorini kiriting:", reply_markup=only_back_keyboard())
         return
 
     await state.update_data(color=normalize_optional_text(text))
-    data = await state.get_data()
-    category = data.get("product_category", "")
-
-    if PRODUCT_CATALOG.get(category, {}).get("needs_text"):
-        await message.answer("✍️ Ustiga yozuvni kiriting.\nKerak bo'lmasa 'yo'q' deb yozing.", reply_markup=only_back_keyboard())
-        await state.set_state(AddToCartStates.top_text)
-        return
-
-    if PRODUCT_CATALOG.get(category, {}).get("needs_filling"):
-        await message.answer(
-            "🍓 Ta'm / nachinkani kiriting.\n"
-            "Masalan: 1-chi qavati bananli, 2-chi qavati mag'izli\n"
-            "Kerak bo'lmasa 'yo'q' deb yozing.",
-            reply_markup=only_back_keyboard(),
-        )
-        await state.set_state(AddToCartStates.filling)
-        return
-
-    await message.answer("📝 Qo'shimcha izoh yozing.\nBo'lmasa 'yo'q' deb yozing.", reply_markup=only_back_keyboard())
-    await state.set_state(AddToCartStates.note)
+    await message.answer("✍️ Ustiga yozuvni kiriting.\nKerak bo'lmasa 'yo'q' deb yozing.", reply_markup=only_back_keyboard())
+    await state.set_state(AddToCartStates.top_text)
 
 
 @dp.message(AddToCartStates.top_text)
@@ -1363,36 +1372,31 @@ async def cart_top_text(message: Message, state: FSMContext) -> None:
     text = get_text(message)
     if text == "🔙 Ortga":
         data = await state.get_data()
-        category = data.get("product_category", "")
-        product_title = data.get("product_title", "")
-        if needs_color_for_selection(category, product_title):
+        if needs_color_for_selection(data.get("product_category", ""), data.get("product_title", "")):
             await state.set_state(AddToCartStates.color)
             await message.answer("🎨 Rangini kiriting.\nKerak bo'lmasa 'yo'q' deb yozing.", reply_markup=only_back_keyboard())
-        elif needs_decoration_for_selection(category, product_title):
+            return
+        if data.get("decoration"):
             await state.set_state(AddToCartStates.decoration)
             await message.answer("✨ Bezak turini tanlang:", reply_markup=decoration_keyboard())
-        elif needs_design_for_selection(category, product_title):
+            return
+        if needs_design_for_selection(data.get("product_category", ""), data.get("product_title", "")):
             await state.set_state(AddToCartStates.design)
             await message.answer("🧁 Dizayni qanday bo'lsin?", reply_markup=only_back_keyboard())
-        else:
-            await state.set_state(AddToCartStates.amount)
-            await message.answer("📏 Miqdorini kiriting:", reply_markup=only_back_keyboard())
+            return
+        await state.set_state(AddToCartStates.amount)
+        await message.answer("📏 Miqdorini kiriting:", reply_markup=only_back_keyboard())
         return
 
     await state.update_data(top_text=normalize_optional_text(text))
-    data = await state.get_data()
-    category = data.get("product_category", "")
-
+    category = (await state.get_data()).get("product_category", "")
     if PRODUCT_CATALOG.get(category, {}).get("needs_filling"):
         await message.answer(
-            "🍓 Ta'm / nachinkani kiriting.\n"
-            "Masalan: 1-chi qavati bananli, 2-chi qavati mag'izli\n"
-            "Kerak bo'lmasa 'yo'q' deb yozing.",
+            "🍓 Ta'm / nachinkani kiriting.\nMasalan: 1-chi qavati bananli, 2-chi qavati mag'izli\nKerak bo'lmasa 'yo'q' deb yozing.",
             reply_markup=only_back_keyboard(),
         )
         await state.set_state(AddToCartStates.filling)
         return
-
     await message.answer("📝 Qo'shimcha izoh yozing.\nBo'lmasa 'yo'q' deb yozing.", reply_markup=only_back_keyboard())
     await state.set_state(AddToCartStates.note)
 
@@ -1401,24 +1405,8 @@ async def cart_top_text(message: Message, state: FSMContext) -> None:
 async def cart_filling(message: Message, state: FSMContext) -> None:
     text = get_text(message)
     if text == "🔙 Ortga":
-        data = await state.get_data()
-        category = data.get("product_category", "")
-        product_title = data.get("product_title", "")
-        if PRODUCT_CATALOG.get(category, {}).get("needs_text"):
-            await state.set_state(AddToCartStates.top_text)
-            await message.answer("✍️ Ustiga yozuvni kiriting.\nKerak bo'lmasa 'yo'q' deb yozing.", reply_markup=only_back_keyboard())
-        elif needs_color_for_selection(category, product_title):
-            await state.set_state(AddToCartStates.color)
-            await message.answer("🎨 Rangini kiriting.\nKerak bo'lmasa 'yo'q' deb yozing.", reply_markup=only_back_keyboard())
-        elif needs_decoration_for_selection(category, product_title):
-            await state.set_state(AddToCartStates.decoration)
-            await message.answer("✨ Bezak turini tanlang:", reply_markup=decoration_keyboard())
-        elif needs_design_for_selection(category, product_title):
-            await state.set_state(AddToCartStates.design)
-            await message.answer("🧁 Dizayni qanday bo'lsin?", reply_markup=only_back_keyboard())
-        else:
-            await state.set_state(AddToCartStates.amount)
-            await message.answer("📏 Miqdorini kiriting:", reply_markup=only_back_keyboard())
+        await state.set_state(AddToCartStates.top_text)
+        await message.answer("✍️ Ustiga yozuvni kiriting.\nKerak bo'lmasa 'yo'q' deb yozing.", reply_markup=only_back_keyboard())
         return
 
     await state.update_data(filling=normalize_optional_text(text))
@@ -1430,65 +1418,50 @@ async def cart_filling(message: Message, state: FSMContext) -> None:
 async def cart_note(message: Message, state: FSMContext) -> None:
     text = get_text(message)
     if text == "🔙 Ortga":
-        data = await state.get_data()
-        category = data.get("product_category", "")
-        product_title = data.get("product_title", "")
+        category = (await state.get_data()).get("product_category", "")
         if PRODUCT_CATALOG.get(category, {}).get("needs_filling"):
             await state.set_state(AddToCartStates.filling)
             await message.answer(
                 "🍓 Ta'm / nachinkani kiriting.\nMasalan: 1-chi qavati bananli, 2-chi qavati mag'izli\nKerak bo'lmasa 'yo'q' deb yozing.",
                 reply_markup=only_back_keyboard(),
             )
-        elif PRODUCT_CATALOG.get(category, {}).get("needs_text"):
-            await state.set_state(AddToCartStates.top_text)
-            await message.answer("✍️ Ustiga yozuvni kiriting.\nKerak bo'lmasa 'yo'q' deb yozing.", reply_markup=only_back_keyboard())
-        elif needs_color_for_selection(category, product_title):
-            await state.set_state(AddToCartStates.color)
-            await message.answer("🎨 Rangini kiriting.\nKerak bo'lmasa 'yo'q' deb yozing.", reply_markup=only_back_keyboard())
-        elif needs_decoration_for_selection(category, product_title):
-            await state.set_state(AddToCartStates.decoration)
-            await message.answer("✨ Bezak turini tanlang:", reply_markup=decoration_keyboard())
-        elif needs_design_for_selection(category, product_title):
-            await state.set_state(AddToCartStates.design)
-            await message.answer("🧁 Dizayni qanday bo'lsin?", reply_markup=only_back_keyboard())
-        else:
-            await state.set_state(AddToCartStates.amount)
-            await message.answer("📏 Miqdorini kiriting:", reply_markup=only_back_keyboard())
+            return
+        await state.set_state(AddToCartStates.top_text)
+        await message.answer("✍️ Ustiga yozuvni kiriting.\nKerak bo'lmasa 'yo'q' deb yozing.", reply_markup=only_back_keyboard())
         return
 
     await state.update_data(extra_note=normalize_optional_text(text))
     data = await state.get_data()
-    summary_lines = [
+    lines = [
         "<b>Mahsulot tayyor:</b>",
-        f"🍰 Nomi: {data.get('product_title', data.get('selected_product', ''))}",
+        f"🍰 Nomi: {data.get('product_title', '')}",
         f"📏 Miqdori: {data.get('quantity_value', '')}",
         f"🧁 Dizayn: {data.get('design_text', '') or '-'}",
     ]
     if data.get("decoration"):
-        summary_lines.append(f"✨ Bezak: {format_decoration_text(data.get('decoration'))}")
+        lines.append(f"✨ Bezak: {format_decoration_text(data['decoration'])}")
     if data.get("decoration_photo_ids"):
-        summary_lines.append(f"🖼 Bezak rasmlari: {len(data.get('decoration_photo_ids', []))} ta")
-    summary_lines.extend(
-        [
-            f"🎨 Rang: {data.get('color', '') or '-'}",
-            f"✍️ Yozuv: {data.get('top_text', '') or '-'}",
-            f"🍓 Ta'm: {data.get('filling', '') or '-'}",
-            f"📝 Izoh: {data.get('extra_note', '') or '-'}",
-        ]
-    )
-    await message.answer("\n".join(summary_lines) + "\n\nKeyingi bosqichni tanlang:", reply_markup=add_to_cart_finish_keyboard())
+        lines.append(f"🖼 Bezak rasmlari: {len(data.get('decoration_photo_ids', []))} ta")
+    lines.extend([
+        f"🎨 Rang: {data.get('color', '') or '-'}",
+        f"✍️ Yozuv: {data.get('top_text', '') or '-'}",
+        f"🍓 Ta'm: {data.get('filling', '') or '-'}",
+        f"📝 Izoh: {data.get('extra_note', '') or '-'}",
+    ])
+    await message.answer("\n".join(lines) + "\n\nKeyingi bosqichni tanlang:", reply_markup=add_to_cart_finish_keyboard())
     await state.set_state(AddToCartStates.confirm_add)
+
 
 @dp.message(AddToCartStates.confirm_add, F.text == "✅ Savatga qo'shish")
 async def confirm_add_to_cart(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     cart_item = {
-        "product_title": data.get("product_title", data.get("selected_product", "")),
+        "product_title": data.get("product_title", ""),
         "product_category": data.get("product_category", ""),
         "product_number": data.get("product_number"),
         "quantity_value": data.get("quantity_value", ""),
         "design_text": data.get("design_text", ""),
-        "decoration": data.get("decoration", ""),
+        "decoration_text": format_decoration_text(data.get("decoration", "")) if data.get("decoration") else "",
         "decoration_photo_ids": list(data.get("decoration_photo_ids", [])),
         "color": data.get("color", ""),
         "top_text": data.get("top_text", ""),
@@ -1497,12 +1470,10 @@ async def confirm_add_to_cart(message: Message, state: FSMContext) -> None:
     }
     cart = data.get("simple_cart", [])
     cart.append(cart_item)
-
     await state.clear()
     await state.update_data(user_id=message.from_user.id, username=message.from_user.username or "", simple_cart=cart)
     await message.answer(
-        f"✅ <b>{cart_item['product_title']}</b> savatga qo'shildi.\n"
-        f"Savatda hozir <b>{len(cart)}</b> ta mahsulot bor.",
+        f"✅ <b>{cart_item['product_title']}</b> savatga qo'shildi.\nSavatda hozir <b>{len(cart)}</b> ta mahsulot bor.",
         reply_markup=after_add_cart_keyboard(),
     )
 
@@ -1524,15 +1495,13 @@ async def add_more_products(message: Message, state: FSMContext) -> None:
 
 @dp.message(F.text == "🛒 Savatni ko'rish")
 async def show_simple_cart(message: Message, state: FSMContext) -> None:
-    data = await state.get_data()
-    cart = data.get("simple_cart", [])
+    cart = (await state.get_data()).get("simple_cart", [])
     await message.answer(build_simple_cart_text(cart), reply_markup=after_add_cart_keyboard())
 
 
 @dp.message(F.text == "✅ Zakazni rasmiylashtirish")
 async def start_checkout_from_cart(message: Message, state: FSMContext) -> None:
-    data = await state.get_data()
-    cart = data.get("simple_cart", [])
+    cart = (await state.get_data()).get("simple_cart", [])
     if not cart:
         await message.answer("🛒 Savat bo'sh.")
         return
@@ -1544,13 +1513,13 @@ async def start_checkout_from_cart(message: Message, state: FSMContext) -> None:
 # =========================================================
 @dp.message(CheckoutStates.full_name)
 async def checkout_name(message: Message, state: FSMContext) -> None:
-    if message.text == "🔙 Ortga":
+    if get_text(message) == "🔙 Ortga":
         data = await state.get_data()
         await state.clear()
         await state.update_data(user_id=message.from_user.id, username=message.from_user.username or "", simple_cart=data.get("simple_cart", []))
         await message.answer(build_simple_cart_text(data.get("simple_cart", [])), reply_markup=after_add_cart_keyboard())
         return
-    await state.update_data(full_name=message.text.strip())
+    await state.update_data(full_name=get_text(message))
     await message.answer("📞 Telefon raqamingizni yuboring/yozing:", reply_markup=phone_keyboard())
     await state.set_state(CheckoutStates.phone)
 
@@ -1564,94 +1533,95 @@ async def checkout_phone_contact(message: Message, state: FSMContext) -> None:
 
 @dp.message(CheckoutStates.phone)
 async def checkout_phone_text(message: Message, state: FSMContext) -> None:
-    if message.text == "🔙 Ortga":
+    if get_text(message) == "🔙 Ortga":
         await state.set_state(CheckoutStates.full_name)
         await message.answer("👤 Ismingizni kiriting:", reply_markup=only_back_keyboard())
         return
-    await state.update_data(phone=message.text.strip())
+    await state.update_data(phone=get_text(message))
     await message.answer("📅 Qaysi sanaga kerak?\nMasalan: 15.03.2026", reply_markup=only_back_keyboard())
     await state.set_state(CheckoutStates.delivery_date)
 
 
 @dp.message(CheckoutStates.delivery_date)
 async def checkout_date(message: Message, state: FSMContext) -> None:
-    if message.text == "🔙 Ortga":
+    if get_text(message) == "🔙 Ortga":
         await state.set_state(CheckoutStates.phone)
         await message.answer("📞 Telefon raqamingizni yuboring/yozing:", reply_markup=phone_keyboard())
         return
-    await state.update_data(delivery_date=message.text.strip())
+    await state.update_data(delivery_date=get_text(message))
     await message.answer("⏰ Qaysi vaqtga kerak?\nMasalan: 18:00", reply_markup=only_back_keyboard())
     await state.set_state(CheckoutStates.delivery_time)
 
 
 @dp.message(CheckoutStates.delivery_time)
 async def checkout_time(message: Message, state: FSMContext) -> None:
-    if message.text == "🔙 Ortga":
+    if get_text(message) == "🔙 Ortga":
         await state.set_state(CheckoutStates.delivery_date)
         await message.answer("📅 Qaysi sanaga kerak?\nMasalan: 15.03.2026", reply_markup=only_back_keyboard())
         return
-    await state.update_data(delivery_time=message.text.strip())
+    await state.update_data(delivery_time=get_text(message))
     await message.answer("🚚 Yetkazib berilsinmi yoki o'zingiz olib ketasizmi?", reply_markup=delivery_keyboard())
     await state.set_state(CheckoutStates.delivery_type)
 
 
 @dp.message(CheckoutStates.delivery_type)
 async def checkout_delivery_type(message: Message, state: FSMContext) -> None:
-    if message.text == "🔙 Ortga":
+    text = get_text(message)
+    if text == "🔙 Ortga":
         await state.set_state(CheckoutStates.delivery_time)
         await message.answer("⏰ Qaysi vaqtga kerak?\nMasalan: 18:00", reply_markup=only_back_keyboard())
         return
-    await state.update_data(delivery_type=message.text.strip())
-    if message.text == "🚚 Yetkazib berish":
-        await message.answer(
-            "🚕 Online taxi orqali yetkaziladi. Taxi to'lovi o'zingizdan.\n\n📍 Manzilni kiriting:",
-            reply_markup=only_back_keyboard(),
-        )
+    await state.update_data(delivery_type=text)
+    if text == "🚚 Yetkazib berish":
+        await message.answer("🚕 Online taxi orqali yetkaziladi. Taxi to'lovi o'zingizdan.\n\n📍 Manzilni kiriting:", reply_markup=only_back_keyboard())
         await state.set_state(CheckoutStates.address)
         return
-    await message.answer("🏬 Qaysi filialdan olib ketasiz?\n1) Chortoq tumani\n2) Uychi tumani", reply_markup=pickup_branch_keyboard())
-    await state.set_state(CheckoutStates.pickup_branch)
+    if text == "🏬 Olib ketaman":
+        await message.answer("🏬 Qaysi filialdan olib ketasiz?", reply_markup=pickup_branch_keyboard())
+        await state.set_state(CheckoutStates.pickup_branch)
+        return
+    await message.answer("Iltimos, tugmadan tanlang.", reply_markup=delivery_keyboard())
 
 
 @dp.message(CheckoutStates.pickup_branch)
 async def checkout_branch(message: Message, state: FSMContext) -> None:
-    if message.text == "🔙 Ortga":
+    text = get_text(message)
+    if text == "🔙 Ortga":
         await state.set_state(CheckoutStates.delivery_type)
         await message.answer("🚚 Yetkazib berilsinmi yoki o'zingiz olib ketasizmi?", reply_markup=delivery_keyboard())
         return
-    await state.update_data(pickup_branch=message.text.strip(), address="")
+    await state.update_data(pickup_branch=text, address="")
     await message.answer("📝 Qo'shimcha izoh yozing.\nBo'lmasa '-' deb yozing.", reply_markup=only_back_keyboard())
     await state.set_state(CheckoutStates.notes)
 
 
 @dp.message(CheckoutStates.address)
 async def checkout_address(message: Message, state: FSMContext) -> None:
-    if message.text == "🔙 Ortga":
+    text = get_text(message)
+    if text == "🔙 Ortga":
         await state.set_state(CheckoutStates.delivery_type)
         await message.answer("🚚 Yetkazib berilsinmi yoki o'zingiz olib ketasizmi?", reply_markup=delivery_keyboard())
         return
-    await state.update_data(address=message.text.strip(), pickup_branch="")
+    await state.update_data(address=text, pickup_branch="")
     await message.answer("📝 Qo'shimcha izoh yozing.\nBo'lmasa '-' deb yozing.", reply_markup=only_back_keyboard())
     await state.set_state(CheckoutStates.notes)
 
 
 @dp.message(CheckoutStates.notes)
 async def checkout_notes(message: Message, state: FSMContext) -> None:
-    if message.text == "🔙 Ortga":
+    text = get_text(message)
+    if text == "🔙 Ortga":
         data = await state.get_data()
         if data.get("delivery_type") == "🚚 Yetkazib berish":
             await state.set_state(CheckoutStates.address)
             await message.answer("📍 Manzilni kiriting:", reply_markup=only_back_keyboard())
         else:
             await state.set_state(CheckoutStates.pickup_branch)
-            await message.answer("🏬 Qaysi filialdan olib ketasiz?\n1) Chortoq tumani\n2) Uychi tumani", reply_markup=pickup_branch_keyboard())
+            await message.answer("🏬 Qaysi filialdan olib ketasiz?", reply_markup=pickup_branch_keyboard())
         return
-    await state.update_data(notes=normalize_optional_text(message.text))
+    await state.update_data(notes=normalize_optional_text(text))
     await message.answer(
-        "📌 Namuna yoki tarif (ixtiyoriy):\n"
-        "📸 Namuna rasmini yuborishingiz mumkin.\n"
-        "✍️ Batafsil yozib berishingiz mumkin.\n"
-        "⏭️ Namunasiz ham davom etishingiz mumkin.",
+        "📌 Namuna yoki tarif (ixtiyoriy):\n📸 Namuna rasmini yuborishingiz mumkin.\n✍️ Batafsil yozib berishingiz mumkin.\n⏭️ Namunasiz ham davom etishingiz mumkin.",
         reply_markup=reference_keyboard(),
     )
     await state.set_state(CheckoutStates.reference_choice)
@@ -1695,11 +1665,17 @@ async def finalize_checkout(message: Message, state: FSMContext, reference_type:
         await state.clear()
         return
 
-    for admin_id in ADMIN_IDS:
+    for admin_id in ADMIN_IDS | SUPER_ADMIN_IDS:
         if reference_photo_id:
-            await bot.send_photo(admin_id, photo=reference_photo_id, caption=build_order_preview(order_id), reply_markup=admin_order_actions_keyboard(order_id))
+            await safe_send_photo(admin_id, reference_photo_id, caption=build_order_preview(order_id), reply_markup=admin_order_actions_keyboard(order_id))
         else:
-            await bot.send_message(admin_id, build_order_preview(order_id), reply_markup=admin_order_actions_keyboard(order_id))
+            await safe_send_message(admin_id, build_order_preview(order_id), reply_markup=admin_order_actions_keyboard(order_id))
+
+    # send decoration images separately
+    for item in cart:
+        for photo_id in item.get("decoration_photo_ids", []):
+            for admin_id in ADMIN_IDS | SUPER_ADMIN_IDS:
+                await safe_send_photo(admin_id, photo_id, caption=f"🖼 Zakaz #{order_id} bezak rasmi: {item.get('product_title', '')}")
 
     await message.answer("✅ Zakazingiz adminga yuborildi. Narx va zakolat kelishini kuting.", reply_markup=main_keyboard())
     await state.clear()
@@ -1723,11 +1699,11 @@ async def checkout_reference_invalid(message: Message) -> None:
 
 @dp.message(CheckoutStates.reference_text)
 async def checkout_reference_text(message: Message, state: FSMContext) -> None:
-    if message.text == "🔙 Ortga":
+    if get_text(message) == "🔙 Ortga":
         await state.set_state(CheckoutStates.reference_choice)
-        await message.answer("📌 Variantni tanlang:\n", reply_markup=reference_keyboard())
+        await message.answer("📌 Variantni tanlang:", reply_markup=reference_keyboard())
         return
-    await finalize_checkout(message, state, "text", message.text.strip(), "")
+    await finalize_checkout(message, state, "text", get_text(message), "")
 
 
 @dp.message(CheckoutStates.reference_photo, F.photo)
@@ -1737,9 +1713,9 @@ async def checkout_reference_photo(message: Message, state: FSMContext) -> None:
 
 @dp.message(CheckoutStates.reference_photo)
 async def checkout_reference_photo_invalid(message: Message, state: FSMContext) -> None:
-    if message.text == "🔙 Ortga":
+    if get_text(message) == "🔙 Ortga":
         await state.set_state(CheckoutStates.reference_choice)
-        await message.answer("📌 Variantni tanlang:\n", reply_markup=reference_keyboard())
+        await message.answer("📌 Variantni tanlang:", reply_markup=reference_keyboard())
         return
     await message.answer("📸 Iltimos, rasm yuboring yoki 🔙 Ortga ni bosing.")
 
@@ -1755,7 +1731,6 @@ async def choose_card_payment(message: Message) -> None:
     if not order["total_price"] or not order["deposit_amount"]:
         await message.answer("⏳ Admin hali narx yoki zakolat summasini yubormagan.")
         return
-
     set_payment_type(order["id"], "card")
     await message.answer(
         f"{CARD_TEXT}\n"
@@ -1777,7 +1752,6 @@ async def choose_cash_payment(message: Message) -> None:
     if not order["total_price"] or not order["deposit_amount"]:
         await message.answer("⏳ Admin hali narx yoki zakolat summasini yubormagan.")
         return
-
     set_payment_type(order["id"], "cash")
     await message.answer(
         f"💵 Qolganini naqd berish tanlandi.\n"
@@ -1793,21 +1767,17 @@ async def choose_cash_payment(message: Message) -> None:
 @dp.message(F.photo)
 async def get_payment_check(message: Message) -> None:
     order = get_latest_actionable_order_for_user(message.from_user.id)
-    if not order:
+    if not order or order["status"] not in {STATUS_AWAITING_DEPOSIT_CHECK, STATUS_PRICED}:
         return
-    if order["status"] not in {STATUS_AWAITING_DEPOSIT_CHECK, STATUS_PRICED}:
-        return
-
     deposit_int = safe_int_from_money(order["deposit_amount"] or "")
-    if deposit_int is None or deposit_int < MIN_DEPOSIT:
+    if deposit_int is None:
         await message.answer("⏳ Zakolat summasi hali to'g'ri belgilanmagan.\nAdmin bilan bog'laning.")
         return
-
     save_payment_check(order["id"], message.photo[-1].file_id)
-    for admin_id in ADMIN_IDS:
-        await bot.send_photo(
+    for admin_id in ADMIN_IDS | SUPER_ADMIN_IDS:
+        await safe_send_photo(
             admin_id,
-            photo=message.photo[-1].file_id,
+            message.photo[-1].file_id,
             caption=(
                 f"🧾 Zakaz #{order['id']} uchun zakolat cheki\n"
                 f"💵 Umumiy narx: {order['total_price']}\n"
@@ -1839,7 +1809,6 @@ async def admins_handler(message: Message) -> None:
         f"Admin IDs: {', '.join(str(x) for x in sorted(ADMIN_IDS)) or '-'}\n"
         f"Super admin IDs: {', '.join(str(x) for x in sorted(SUPER_ADMIN_IDS)) or '-'}"
     )
-
 
 
 @dp.message(Command("products"))
@@ -1879,6 +1848,7 @@ async def setphoto_handler(message: Message) -> None:
     set_product_photo(product_number, row["category"], row["title"], photo_id)
     await message.answer(f"✅ {product_number}. {row['title']} uchun rasm saqlandi.")
 
+
 @dp.message(Command("adminstats"))
 @dp.message(F.text.contains("Pro statistika"))
 async def adminstats_handler(message: Message) -> None:
@@ -1906,14 +1876,12 @@ async def last_orders_handler(message: Message) -> None:
     if not rows:
         await message.answer("📭 Hali zakazlar yo'q.")
         return
-    lines = ["<b>📦 Oxirgi 10 ta zakaz:</b>\n"]
+    lines = ["<b>📦 Oxirgi 10 ta zakaz:</b>"]
     for row in rows:
         lines.append(
             f"#{row['id']} | {row['full_name']} | {row['phone']} | {row['delivery_date'] or '-'} {row['delivery_time'] or '-'} | {row['total_price'] or '-'} | {row['deposit_amount'] or '-'} | {row['status']}"
         )
-    lines.append("")
     lines.append("💬 Narx va zakolat yuborish: <code>/price ORDER_ID 150000</code>")
-    lines.append("💬 Yoki depozit bilan: <code>/price ORDER_ID 150000 30000</code>")
     await message.answer("\n".join(lines))
 
 
@@ -1922,7 +1890,7 @@ async def price_command_handler(message: Message) -> None:
     if not is_admin(message.from_user.id):
         return
 
-    parts = message.text.strip().split()
+    parts = get_text(message).split()
     if len(parts) < 3:
         await message.answer("❗ To'g'ri format: <code>/price ORDER_ID UMUMIY_NARX [ZAKOLAT]</code>")
         return
@@ -1938,12 +1906,14 @@ async def price_command_handler(message: Message) -> None:
         await message.answer("❗ Narx raqam bo'lishi kerak.")
         return
 
-    deposit_int = safe_int_from_money(parts[3]) if len(parts) >= 4 else auto_deposit_by_total(total_int)
-    if deposit_int is None:
-        await message.answer("❗ Zakolat raqam bo'lishi kerak.")
-        return
-    if len(parts) < 4:
+    if len(parts) >= 4:
+        deposit_int = safe_int_from_money(parts[3])
+        if deposit_int is None:
+            await message.answer("❗ Zakolat raqam bo'lishi kerak.")
+            return
+    else:
         deposit_int = auto_deposit_by_total(total_int)
+
     if deposit_int > total_int:
         await message.answer("❗ Zakolat umumiy narxdan katta bo'lishi mumkin emas.")
         return
@@ -1954,7 +1924,7 @@ async def price_command_handler(message: Message) -> None:
         await message.answer("❌ Bunday zakaz topilmadi.")
         return
 
-    await bot.send_message(
+    await safe_send_message(
         user_id,
         f"<b>💰 Sizning zakagingiz narxi tayyor.</b>\n"
         f"🆔 Zakaz raqami: #{order_id}\n"
@@ -1997,15 +1967,16 @@ async def admin_order_action_handler(callback: CallbackQuery) -> None:
         total_hint = order["total_price"] or "150000"
         deposit_hint = order["deposit_amount"] or format_money(auto_deposit_by_total(safe_int_from_money(total_hint) or 150000))
         await callback.answer()
-        await callback.message.answer(
-            f"💰 Zakaz #{order_id} uchun narx va zakolat yuborish:\n"
-            f"<code>/price {order_id} {safe_int_from_money(total_hint) or 150000} {safe_int_from_money(deposit_hint) or auto_deposit_by_total(150000)}</code>"
-        )
+        if callback.message:
+            await callback.message.answer(
+                f"💰 Zakaz #{order_id} uchun narx va zakolat yuborish:\n"
+                f"<code>/price {order_id} {safe_int_from_money(total_hint) or 150000} {safe_int_from_money(deposit_hint) or auto_deposit_by_total(150000)}</code>"
+            )
         return
 
     if action == "warn":
         if order["payment_check_photo_id"]:
-            await bot.send_message(
+            await safe_send_message(
                 order["user_id"],
                 f"⚠️ Zakaz #{order_id} bo'yicha ogohlantirish:\n"
                 "Yuborgan chekingiz qayta tekshiruvga tushdi.\nIltimos, aniq va toza chek yuboring yoki admin bilan bog'laning."
@@ -2031,7 +2002,7 @@ async def admin_order_action_handler(callback: CallbackQuery) -> None:
         await callback.answer("Zakaz topilmadi.", show_alert=True)
         return
 
-    await bot.send_message(
+    await safe_send_message(
         user_id,
         f"{user_text}\n"
         f"🆔 Zakaz raqami: #{order_id}\n"
@@ -2040,15 +2011,16 @@ async def admin_order_action_handler(callback: CallbackQuery) -> None:
         f"💰 Qolgan to'lov: {order['remaining_amount'] or '-'}"
     )
     await callback.answer(label)
-    await callback.message.answer(
-        f"{label}\n"
-        f"🆔 Zakaz: #{order_id}\n"
-        f"👤 Mijoz: {order['full_name']}\n"
-        f"📌 Holati: {new_status}\n"
-        f"💵 Umumiy narx: {order['total_price'] or '-'}\n"
-        f"💳 Zakolat: {order['deposit_amount'] or '-'}\n"
-        f"💰 Qolgan to'lov: {order['remaining_amount'] or '-'}"
-    )
+    if callback.message:
+        await callback.message.answer(
+            f"{label}\n"
+            f"🆔 Zakaz: #{order_id}\n"
+            f"👤 Mijoz: {order['full_name']}\n"
+            f"📌 Holati: {new_status}\n"
+            f"💵 Umumiy narx: {order['total_price'] or '-'}\n"
+            f"💳 Zakolat: {order['deposit_amount'] or '-'}\n"
+            f"💰 Qolgan to'lov: {order['remaining_amount'] or '-'}"
+        )
 
 # =========================================================
 # 🚀 MAIN
