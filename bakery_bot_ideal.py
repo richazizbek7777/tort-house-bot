@@ -43,7 +43,7 @@ def env_int_set(name: str, default: str = "") -> set[int]:
     return values
 
 
-BOT_TOKEN = os.getenv("8738414496:AAGq2O2jvel8wVmX9hdYigHpJtc1pLT5FvE", "").strip()
+BOT_TOKEN = os.getenv("8738414496:AAH6Yv-UmqVc-8kjaOi3nBsGUUnGuOglv_o", "").strip()
 ADMIN_IDS = env_int_set("ADMIN_IDS", "1031944247,7410870199")
 SUPER_ADMIN_IDS = env_int_set("SUPER_ADMIN_IDS", "1031944247")
 
@@ -2028,8 +2028,8 @@ async def admin_order_action_handler(callback: CallbackQuery) -> None:
 async def main() -> None:
     global bot
 
-    if not BOT_TOKEN or BOT_TOKEN == "PASTE_NEW_BOT_TOKEN_HERE":
-        raise ValueError("Yangi bot tokenni kiriting.")
+    if not BOT_TOKEN:
+        raise ValueError("BOT_TOKEN topilmadi.")
 
     init_db()
     bot = Bot(
