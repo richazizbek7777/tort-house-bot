@@ -43,7 +43,7 @@ def env_int_set(name: str, default: str = "") -> set[int]:
     return values
 
 
-BOT_TOKEN = env_str("8738414496:AAGq2O2jvel8wVmX9hdYigHpJtc1pLT5FvE")
+BOT_TOKEN = os.getenv("8738414496:AAGq2O2jvel8wVmX9hdYigHpJtc1pLT5FvE", "8738414496:AAGq2O2jvel8wVmX9hdYigHpJtc1pLT5FvE").strip()
 ADMIN_IDS = env_int_set("ADMIN_IDS", "1031944247,7410870199")
 SUPER_ADMIN_IDS = env_int_set("SUPER_ADMIN_IDS", "1031944247")
 
@@ -2026,11 +2026,14 @@ async def admin_order_action_handler(callback: CallbackQuery) -> None:
 # 🚀 MAIN
 # =========================================================
 async def main() -> None:
-    if BOT_TOKEN == "PASTE_NEW_BOT_TOKEN_HERE":
+    global bot
+
+    if not BOT_TOKEN or BOT_TOKEN == "PASTE_NEW_BOT_TOKEN_HERE":
         raise ValueError("Yangi bot tokenni kiriting.")
+
     init_db()
+    bot = Bot(
+        token=BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+    )
     await dp.start_polling(bot)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
