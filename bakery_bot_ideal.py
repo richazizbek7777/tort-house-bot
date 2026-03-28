@@ -23,13 +23,14 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 # =========================================================
 # ⚙️ CONFIG
 # =========================================================
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8738414496:AAGq2O2jvel8wVmX9hdYigHpJtc1pLT5FvE")
+BOT_TOKEN = os.getenv("8738414496:AAGq2O2jvel8wVmX9hdYigHpJtc1pLT5FvE", "8738414496:AAGq2O2jvel8wVmX9hdYigHpJtc1pLT5FvE").strip()
 
 ADMIN_IDS = {
     int(x.strip())
-    for x in os.getenv("ADMIN_IDS", "1031944247", "7410870199").split(",")
+    for x in os.getenv("ADMIN_IDS", "1031944247,7410870199").split(",")
     if x.strip().isdigit()
 }
+
 SUPER_ADMIN_IDS = {
     int(x.strip())
     for x in os.getenv("SUPER_ADMIN_IDS", "1031944247").split(",")
