@@ -43,7 +43,7 @@ def env_int_set(name: str, default: str = "") -> set[int]:
     return values
 
 
-BOT_TOKEN = env_str("BOT_TOKEN")
+BOT_TOKEN = env_str("8738414496:AAEtnLvFpDZvcP9FmwNPOlVYeQDMsuT9yJs")
 ADMIN_IDS = env_int_set("ADMIN_IDS", "1031944247,7410870199")
 SUPER_ADMIN_IDS = env_int_set("SUPER_ADMIN_IDS", "1031944247")
 
