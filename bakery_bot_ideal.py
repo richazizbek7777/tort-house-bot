@@ -8,7 +8,6 @@ from contextlib import closing
 from datetime import datetime, timedelta
 from typing import Any
 
-
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -25,7 +24,6 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-print("BOT FILE STARTED")
 
 # =========================================================
 # ⚙️ CONFIG
@@ -45,7 +43,7 @@ def env_int_set(name: str, default: str = "") -> set[int]:
     return values
 
 
-BOT_TOKEN = os.getenv("8738414496:AAH6Yv-UmqVc-8kjaOi3nBsGUUnGuOglv_o", "").strip()
+BOT_TOKEN = env_str("8738414496:AAH6Yv-UmqVc-8kjaOi3nBsGUUnGuOglv_o")
 ADMIN_IDS = env_int_set("ADMIN_IDS", "1031944247,7410870199")
 SUPER_ADMIN_IDS = env_int_set("SUPER_ADMIN_IDS", "1031944247")
 
@@ -2029,16 +2027,13 @@ async def admin_order_action_handler(callback: CallbackQuery) -> None:
 # =========================================================
 async def main() -> None:
     global bot
-    print("MAIN STARTED")
-    print("BOT_TOKEN BOR:", bool(BOT_TOKEN))
-
     if not BOT_TOKEN:
-        raise ValueError("BOT_TOKEN topilmadi.")
-
+        raise ValueError("BOT_TOKEN Railway Variables ichida berilmagan.")
     init_db()
-    bot = Bot(
-        token=BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-    )
-    print("POLLING START")
-    await dp.start_polling(bot)
+    bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    logger.info("Bot started. Admins=%s, SuperAdmins=%s", sorted(ADMIN_IDS), sorted(SUPER_ADMIN_IDS))
+    await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
