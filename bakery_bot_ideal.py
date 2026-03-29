@@ -43,7 +43,7 @@ def env_int_set(name: str, default: str = "") -> set[int]:
     return values
 
 
-BOT_TOKEN = "8738414496:AAEi2GhgJP5appD-T7wnRPmMRPv1lV09P_I"
+BOT_TOKEN = "8738414496:AAGP29DR-pdHMUX5ZnMaFNIdH_NM-ZxHCu4"
 ADMIN_IDS = env_int_set("ADMIN_IDS", "1031944247,7410870199")
 SUPER_ADMIN_IDS = env_int_set("SUPER_ADMIN_IDS", "1031944247")
 
@@ -2027,9 +2027,16 @@ async def admin_order_action_handler(callback: CallbackQuery) -> None:
 # =========================================================
 async def main() -> None:
     global bot
+
     if not BOT_TOKEN:
         raise ValueError("BOT_TOKEN topilmadi.")
+
     init_db()
-    bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    bot = Bot(
+        token=BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+    )
+
     await bot.delete_webhook(drop_pending_updates=True)
+    logger.info("Polling start bo'ldi")
     await dp.start_polling(bot)
